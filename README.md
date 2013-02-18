@@ -12,6 +12,7 @@ This project is based on [jsSMS](https://github.com/gmarty/jsSMS), a Sega Master
 
 ## License
 
+<pre>
 SMS Dynamic Recompiler - An attempt to implement a dynamic recompiling emulator for SMS/GG ROMs.
 Copyright (C) 2012  G. Cedric Marty (https://github.com/gmarty)
 Based on JavaGear Copyright (c) 2002-2008 Chris White
@@ -28,3 +29,4 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
+</pre>
