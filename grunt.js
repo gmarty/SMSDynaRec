@@ -6,9 +6,10 @@ module.exports = function(grunt) {
   grunt.initConfig({
     'closure-compiler': {
       js:      [
-        'node_modules/jsSMS/source/setup.js',
+        'src/setup.js',
         'node_modules/jsSMS/source/sms.js',
         'node_modules/jsSMS/source/utils.js',
+        'src/dynaRec.js',
         'src/z80.js',
         'node_modules/jsSMS/source/keyboard.js',
         'node_modules/jsSMS/source/psg.js',
@@ -62,9 +63,10 @@ module.exports = function(grunt) {
       // @todo Refactor to remove 'node_modules/jsSMS/source/build/exports.js' from object `js` prop.
       concat:  {
         js:           [
-          'node_modules/jsSMS/source/setup.js',
+          'src/setup.js',
           'node_modules/jsSMS/source/sms.js',
           'node_modules/jsSMS/source/utils.js',
+          'src/dynaRec.js',
           'src/z80.js',
           'node_modules/jsSMS/source/keyboard.js',
           'node_modules/jsSMS/source/psg.js',
