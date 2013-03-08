@@ -320,12 +320,6 @@ JSSMS.Z80 = function(sms) {
   this.prevOpcode = 0;
 
   /**
-   * The number of instructions in the current block.
-   * @type {number}
-   */
-  this.instNum = 0;
-
-  /**
    * An array of opcodes of the current block.
    * @type {Array.<number>}
    */
@@ -489,8 +483,7 @@ JSSMS.Z80.prototype = {
     this.blocks = Object.create(null);
     this.entryPC = 0;
     this.prevOpcode = this.readMem(0);
-    this.instNum = 0;
-    this.blockInstructions = [];
+    this.blockInstructions = [this.prevOpcode];
   },
 
 
@@ -593,15 +586,12 @@ JSSMS.Z80.prototype = {
     }
 
     while (this.tstates > cyclesTo) {
-      if (ENABLE_DYNAREC &&
-          this.hitCounts[this.pc] >= HOT_BLOCK_THRESHOLD &&
-          this.blocks[this.pc].instNum > 1) {
+      if (ENABLE_DYNAREC && this.blocks[this.pc]) {
         this.hitCounts[this.pc]++;
-        this.blocks[this.pc].blockInstructions(cyclesTo);
+        this.blocks[this.pc].call(this, cyclesTo);
 
         // Reset instrumentation.
         this.entryPC = this.pc;
-        this.instNum = 0;
         this.blockInstructions = [];
 
         return;
@@ -621,11 +611,7 @@ JSSMS.Z80.prototype = {
       if (isEndingInst(this.prevOpcode)) {
         this.hitCounts[this.entryPC]++;
 
-        if (!this.blocks[this.entryPC]) {
-          this.blocks[this.entryPC] = Object.create(null);
-
-          this.blocks[this.entryPC].instNum = this.instNum;
-
+        if (this.hitCounts[this.pc] >= HOT_BLOCK_THRESHOLD && this.blockInstructions.length) {
           var blockFunction = this.blockInstructions
             .map(function(opcode) {
                 return self.opcodeInstructions[opcode];
@@ -633,21 +619,19 @@ JSSMS.Z80.prototype = {
             .join('\n' + 'if (!(this.tstates > cyclesTo)) return;' + '\n\n');
 
           blockFunction = new Function(
-              'return function block_' + toHex(this.entryPC) + '_' + this.instNum + '(cyclesTo) {\n' +
+              'return function block_' + toHex(this.entryPC) + '_' + blockFunction.length + '(cyclesTo) {\n' +
               blockFunction +
               '}'
               )();
 
-          this.blocks[this.entryPC].blockInstructions = blockFunction.bind(this);
+          this.blocks[this.entryPC] = blockFunction;
         }
 
         this.entryPC = this.pc;
-        this.instNum = 0;
         this.blockInstructions = [];
       }
 
       this.prevOpcode = opcode;
-      this.instNum++;
       this.blockInstructions.push(opcode);
 
       this.pc++;
