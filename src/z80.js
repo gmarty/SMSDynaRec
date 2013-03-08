@@ -571,9 +571,9 @@ JSSMS.Z80.prototype = {
    */
   run: function(cycles, cyclesTo) {
     var self = this;
-    var location;
+    var location = 0;
     var opcode = 0;
-    var temp;
+    var temp = 0;
 
     this.tstates += cycles;
 
@@ -587,7 +587,6 @@ JSSMS.Z80.prototype = {
 
     while (this.tstates > cyclesTo) {
       if (ENABLE_DYNAREC && this.blocks[this.pc]) {
-        this.hitCounts[this.pc]++;
         this.blocks[this.pc].call(this, cyclesTo);
 
         // Reset instrumentation.
