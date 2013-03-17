@@ -1,5 +1,5 @@
 'use strict';var DEBUG = true;
-var ACCURATE = true;
+var ACCURATE = false;
 var LITTLE_ENDIAN = true;
 var SUPPORT_DATAVIEW = !!(window["DataView"] && window["ArrayBuffer"]);
 var SAMPLE_RATE = 44100;
@@ -41,7 +41,7 @@ JSSMS.prototype = {isRunning:false, cyclesPerLine:0, no_of_scanlines:0, frameSki
   if(!this.isRunning) {
     this.isRunning = true
   }
-  requestAnimationFrame(this.frame.bind(this));
+  this.ui.requestAnimationFrame(this.frame.bind(this), this.ui.screen);
   this.resetFps();
   this.printFps();
   this.fpsInterval = setInterval(function() {
@@ -62,7 +62,7 @@ JSSMS.prototype = {isRunning:false, cyclesPerLine:0, no_of_scanlines:0, frameSki
       }
     }
     this.fpsFrameCount++;
-    requestAnimationFrame(this.frame.bind(this))
+    this.ui.requestAnimationFrame(this.frame.bind(this), this.ui.screen)
   }
 }, emulateNextFrame:function() {
   var startTime = 0;
@@ -343,10 +343,13 @@ JSSMS.Utils = {rndInt:function(range) {
   }
 }(), getTimestamp:Date.now || function() {
   return(new Date).getTime()
-}, getPrefix:function(arr) {
+}, getPrefix:function(arr, obj) {
   var prefix = false;
+  if(obj == undefined) {
+    obj = document
+  }
   arr.some(function(prop) {
-    if(prop in document) {
+    if(prop in obj) {
       prefix = prop;
       return true
     }
@@ -416,69 +419,129 @@ var opcodeToJS = function(opcode) {
     this.c = this.readMem(this.pc++);
     this.b = this.readMem(this.pc++)
   }, 2:function() {
-    this.writeMem(this.getBC(), this.a)
+    this.writeMem(this.b << 8 | this.c, this.a)
   }, 3:function() {
-    this.incBC()
+    this.c = this.c + 1 & 255;
+    if(this.c == 0) {
+      this.b = this.b + 1 & 255
+    }
   }, 4:function() {
-    this.b = this.inc8(this.b)
+    this.b = this.b + 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_INC_TABLE[this.b]
   }, 5:function() {
-    this.b = this.dec8(this.b)
+    this.b = this.b - 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_DEC_TABLE[this.b]
   }, 6:function() {
     this.b = this.readMem(this.pc++)
   }, 7:function() {
-    this.rlca_a()
+    var carry = this.a >> 7;
+    this.a = this.a << 1 & 255 | carry;
+    this.f = this.f & 236 | carry
   }, 8:function() {
-    this.exAF()
+    var temp = this.a;
+    this.a = this.a2;
+    this.a2 = temp;
+    temp = this.f;
+    this.f = this.f2;
+    this.f2 = temp
   }, 9:function() {
-    this.setHL(this.add16(this.getHL(), this.getBC()))
+    var reg = this.h << 8 | this.l;
+    var value = this.b << 8 | this.c;
+    var result = reg + value;
+    this.f = this.f & 196 | (reg ^ result ^ value) >> 8 & 16 | result >> 16 & 1;
+    var value1 = result & 65535;
+    this.h = value1 >> 8;
+    this.l = value1 & 255
   }, 10:function() {
-    this.a = this.readMem(this.getBC())
+    this.a = this.readMem(this.b << 8 | this.c)
   }, 11:function() {
-    this.decBC()
+    this.c = this.c - 1 & 255;
+    if(this.c == 255) {
+      this.b = this.b - 1 & 255
+    }
   }, 12:function() {
-    this.c = this.inc8(this.c)
+    this.c = this.c + 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_INC_TABLE[this.c]
   }, 13:function() {
-    this.c = this.dec8(this.c)
+    this.c = this.c - 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_DEC_TABLE[this.c]
   }, 14:function() {
     this.c = this.readMem(this.pc++)
   }, 15:function() {
-    this.rrca_a()
+    var carry = this.a & 1;
+    this.a = this.a >> 1 | carry << 7;
+    this.f = this.f & 236 | carry
   }, 16:function() {
     this.b = this.b - 1 & 255;
-    this.jr(this.b != 0)
+    if(this.b != 0) {
+      var d = this.d_() + 1;
+      if(d >= 128) {
+        d = d - 256
+      }
+      this.pc += d;
+      this.tstates -= 5
+    }else {
+      this.pc++
+    }
   }, 17:function() {
     this.e = this.readMem(this.pc++);
     this.d = this.readMem(this.pc++)
   }, 18:function() {
-    this.writeMem(this.getDE(), this.a)
+    this.writeMem(this.d << 8 | this.e, this.a)
   }, 19:function() {
-    this.incDE()
+    this.e = this.e + 1 & 255;
+    if(this.e == 0) {
+      this.d = this.d + 1 & 255
+    }
   }, 20:function() {
-    this.d = this.inc8(this.d)
+    this.d = this.d + 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_INC_TABLE[this.d]
   }, 21:function() {
-    this.d = this.dec8(this.d)
+    this.d = this.d - 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_DEC_TABLE[this.d]
   }, 22:function() {
     this.d = this.readMem(this.pc++)
   }, 23:function() {
-    this.rla_a()
+    var carry = this.a >> 7;
+    this.a = (this.a << 1 | this.f & F_CARRY) & 255;
+    this.f = this.f & 236 | carry
   }, 24:function() {
-    this.pc += this.d_() + 1
+    this.pc += this.readMem(this.pc) + 1
   }, 25:function() {
-    this.setHL(this.add16(this.getHL(), this.getDE()))
+    var result = (this.h << 8 | this.l) + (this.d << 8 | this.e);
+    this.f = this.f & 196 | ((this.h << 8 | this.l) ^ result ^ (this.d << 8 | this.e)) >> 8 & 16 | result >> 16 & 1;
+    this.h = (result & 65535) >> 8;
+    this.l = result & 65535 & 255
   }, 26:function() {
-    this.a = this.readMem(this.getDE())
+    this.a = this.readMem(this.d << 8 | this.e)
   }, 27:function() {
-    this.decDE()
+    this.e = this.e - 1 & 255;
+    if(this.e == 255) {
+      this.d = this.d - 1 & 255
+    }
   }, 28:function() {
-    this.e = this.inc8(this.e)
+    this.e = this.e + 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_INC_TABLE[this.e]
   }, 29:function() {
-    this.e = this.dec8(this.e)
+    this.e = this.e - 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_DEC_TABLE[this.e]
   }, 30:function() {
     this.e = this.readMem(this.pc++)
   }, 31:function() {
-    this.rra_a()
+    var carry = this.a & 1;
+    this.a = (this.a >> 1 | (this.f & F_CARRY) << 7) & 255;
+    this.f = this.f & 236 | carry
   }, 32:function() {
-    this.jr(!((this.f & F_ZERO) != 0))
+    if(!((this.f & F_ZERO) != 0)) {
+      var d = this.d_() + 1;
+      if(d >= 128) {
+        d = d - 256
+      }
+      this.pc += d;
+      this.tstates -= 5
+    }else {
+      this.pc++
+    }
   }, 33:function() {
     this.l = this.readMem(this.pc++);
     this.h = this.readMem(this.pc++)
@@ -488,36 +551,70 @@ var opcodeToJS = function(opcode) {
     this.writeMem(++location, this.h);
     this.pc += 2
   }, 35:function() {
-    this.incHL()
+    this.l = this.l + 1 & 255;
+    if(this.l == 0) {
+      this.h = this.h + 1 & 255
+    }
   }, 36:function() {
-    this.h = this.inc8(this.h)
+    this.h = this.h + 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_INC_TABLE[this.h]
   }, 37:function() {
-    this.h = this.dec8(this.h)
+    this.h = this.h - 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_DEC_TABLE[this.h]
   }, 38:function() {
     this.h = this.readMem(this.pc++)
   }, 39:function() {
-    this.daa()
+    var temp = this.DAA_TABLE[this.a | (this.f & F_CARRY) << 8 | (this.f & F_NEGATIVE) << 8 | (this.f & F_HALFCARRY) << 6];
+    this.a = temp & 255;
+    this.f = this.f & F_NEGATIVE | temp >> 8
   }, 40:function() {
-    this.jr((this.f & F_ZERO) != 0)
+    if((this.f & F_ZERO) != 0) {
+      var d = this.d_() + 1;
+      if(d >= 128) {
+        d = d - 256
+      }
+      this.pc += d;
+      this.tstates -= 5
+    }else {
+      this.pc++
+    }
   }, 41:function() {
-    this.setHL(this.add16(this.getHL(), this.getHL()))
+    var result = (this.h << 8 | this.l) + (this.h << 8 | this.l);
+    this.f = this.f & 196 | ((this.h << 8 | this.l) ^ result ^ (this.h << 8 | this.l)) >> 8 & 16 | result >> 16 & 1;
+    this.h = (result & 65535) >> 8;
+    this.l = result & 65535 & 255
   }, 42:function() {
     var location = this.readMemWord(this.pc);
     this.l = this.readMem(location);
     this.h = this.readMem(location + 1);
     this.pc += 2
   }, 43:function() {
-    this.decHL()
+    this.l = this.l - 1 & 255;
+    if(this.l == 255) {
+      this.h = this.h - 1 & 255
+    }
   }, 44:function() {
-    this.l = this.inc8(this.l)
+    this.l = this.l + 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_INC_TABLE[this.l]
   }, 45:function() {
-    this.l = this.dec8(this.l)
+    this.l = this.l - 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_DEC_TABLE[this.l]
   }, 46:function() {
     this.l = this.readMem(this.pc++)
   }, 47:function() {
-    this.cpl_a()
+    this.a ^= 255;
+    this.f |= F_NEGATIVE | F_HALFCARRY
   }, 48:function() {
-    this.jr(!((this.f & F_CARRY) != 0))
+    if(!((this.f & F_CARRY) != 0)) {
+      var d = this.d_() + 1;
+      if(d >= 128) {
+        d = d - 256
+      }
+      this.pc += d;
+      this.tstates -= 5
+    }else {
+      this.pc++
+    }
   }, 49:function() {
     this.sp = this.readMemWord(this.pc);
     this.pc += 2
@@ -527,32 +624,57 @@ var opcodeToJS = function(opcode) {
   }, 51:function() {
     this.sp++
   }, 52:function() {
-    this.incMem(this.getHL())
+    this.writeMem(this.h << 8 | this.l, this.inc8(this.readMem(this.h << 8 | this.l)))
   }, 53:function() {
-    this.decMem(this.getHL())
+    var offset = this.h << 8 | this.l;
+    var value = this.readMem(offset);
+    value = value - 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_DEC_TABLE[value];
+    this.writeMem(offset, value)
   }, 54:function() {
-    this.writeMem(this.getHL(), this.readMem(this.pc++))
+    this.writeMem(this.h << 8 | this.l, this.readMem(this.pc++))
   }, 55:function() {
     this.f |= F_CARRY;
     this.f &= ~F_NEGATIVE;
     this.f &= ~F_HALFCARRY
   }, 56:function() {
-    this.jr((this.f & F_CARRY) != 0)
+    if((this.f & F_CARRY) != 0) {
+      var d = this.d_() + 1;
+      if(d >= 128) {
+        d = d - 256
+      }
+      this.pc += d;
+      this.tstates -= 5
+    }else {
+      this.pc++
+    }
   }, 57:function() {
-    this.setHL(this.add16(this.getHL(), this.sp))
+    var result = (this.h << 8 | this.l) + this.sp;
+    this.f = this.f & 196 | ((this.h << 8 | this.l) ^ result ^ this.sp) >> 8 & 16 | result >> 16 & 1;
+    this.h = (result & 65535) >> 8;
+    this.l = result & 65535 & 255
   }, 58:function() {
     this.a = this.readMem(this.readMemWord(this.pc));
     this.pc += 2
   }, 59:function() {
     this.sp--
   }, 60:function() {
-    this.a = this.inc8(this.a)
+    this.a = this.a + 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_INC_TABLE[this.a]
   }, 61:function() {
-    this.a = this.dec8(this.a)
+    this.a = this.a - 1 & 255;
+    this.f = this.f & F_CARRY | this.SZHV_DEC_TABLE[this.a]
   }, 62:function() {
     this.a = this.readMem(this.pc++)
   }, 63:function() {
-    this.ccf()
+    if((this.f & F_CARRY) != 0) {
+      this.f &= ~F_CARRY;
+      this.f |= F_HALFCARRY
+    }else {
+      this.f |= F_CARRY;
+      this.f &= ~F_HALFCARRY
+    }
+    this.f &= ~F_NEGATIVE
   }, 64:function() {
   }, 65:function() {
     this.b = this.c
@@ -565,7 +687,7 @@ var opcodeToJS = function(opcode) {
   }, 69:function() {
     this.b = this.l
   }, 70:function() {
-    this.b = this.readMem(this.getHL())
+    this.b = this.readMem(this.h << 8 | this.l)
   }, 71:function() {
     this.b = this.a
   }, 72:function() {
@@ -580,7 +702,7 @@ var opcodeToJS = function(opcode) {
   }, 77:function() {
     this.c = this.l
   }, 78:function() {
-    this.c = this.readMem(this.getHL())
+    this.c = this.readMem(this.h << 8 | this.l)
   }, 79:function() {
     this.c = this.a
   }, 80:function() {
@@ -595,7 +717,7 @@ var opcodeToJS = function(opcode) {
   }, 85:function() {
     this.d = this.l
   }, 86:function() {
-    this.d = this.readMem(this.getHL())
+    this.d = this.readMem(this.h << 8 | this.l)
   }, 87:function() {
     this.d = this.a
   }, 88:function() {
@@ -610,7 +732,7 @@ var opcodeToJS = function(opcode) {
   }, 93:function() {
     this.e = this.l
   }, 94:function() {
-    this.e = this.readMem(this.getHL())
+    this.e = this.readMem(this.h << 8 | this.l)
   }, 95:function() {
     this.e = this.a
   }, 96:function() {
@@ -625,7 +747,7 @@ var opcodeToJS = function(opcode) {
   }, 101:function() {
     this.h = this.l
   }, 102:function() {
-    this.h = this.readMem(this.getHL())
+    this.h = this.readMem(this.h << 8 | this.l)
   }, 103:function() {
     this.h = this.a
   }, 104:function() {
@@ -640,29 +762,36 @@ var opcodeToJS = function(opcode) {
     this.l = this.h
   }, 109:function() {
   }, 110:function() {
-    this.l = this.readMem(this.getHL())
+    this.l = this.readMem(this.h << 8 | this.l)
   }, 111:function() {
     this.l = this.a
   }, 112:function() {
-    this.writeMem(this.getHL(), this.b)
+    this.writeMem(this.h << 8 | this.l, this.b)
   }, 113:function() {
-    this.writeMem(this.getHL(), this.c)
+    this.writeMem(this.h << 8 | this.l, this.c)
   }, 114:function() {
-    this.writeMem(this.getHL(), this.d)
+    this.writeMem(this.h << 8 | this.l, this.d)
   }, 115:function() {
-    this.writeMem(this.getHL(), this.e)
+    this.writeMem(this.h << 8 | this.l, this.e)
   }, 116:function() {
-    this.writeMem(this.getHL(), this.h)
+    this.writeMem(this.h << 8 | this.l, this.h)
   }, 117:function() {
-    this.writeMem(this.getHL(), this.l)
+    this.writeMem(this.h << 8 | this.l, this.l)
   }, 118:function() {
     if(HALT_SPEEDUP) {
-      this.tstates = 0
+      return function() {
+        this.tstates = 0;
+        this.halt = true;
+        this.pc--
+      }
+    }else {
+      return function() {
+        this.halt = true;
+        this.pc--
+      }
     }
-    this.halt = true;
-    this.pc--
-  }, 119:function() {
-    this.writeMem(this.getHL(), this.a)
+  }(), 119:function() {
+    this.writeMem(this.h << 8 | this.l, this.a)
   }, 120:function() {
     this.a = this.b
   }, 121:function() {
@@ -676,72 +805,152 @@ var opcodeToJS = function(opcode) {
   }, 125:function() {
     this.a = this.l
   }, 126:function() {
-    this.a = this.readMem(this.getHL())
+    this.a = this.readMem(this.h << 8 | this.l)
   }, 127:function() {
   }, 128:function() {
-    this.add_a(this.b)
+    var temp = this.a + this.b & 255;
+    this.f = this.SZHVC_ADD_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 129:function() {
-    this.add_a(this.c)
+    var temp = this.a + this.c & 255;
+    this.f = this.SZHVC_ADD_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 130:function() {
-    this.add_a(this.d)
+    var temp = this.a + this.d & 255;
+    this.f = this.SZHVC_ADD_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 131:function() {
-    this.add_a(this.e)
+    var temp = this.a + this.e & 255;
+    this.f = this.SZHVC_ADD_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 132:function() {
-    this.add_a(this.h)
+    var temp = this.a + this.h & 255;
+    this.f = this.SZHVC_ADD_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 133:function() {
-    this.add_a(this.l)
+    var temp = this.a + this.l & 255;
+    this.f = this.SZHVC_ADD_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 134:function() {
-    this.add_a(this.readMem(this.getHL()))
+    var temp = this.a + this.readMem(this.h << 8 | this.l) & 255;
+    this.f = this.SZHVC_ADD_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 135:function() {
-    this.add_a(this.a)
+    var temp = this.a + this.a & 255;
+    this.f = this.SZHVC_ADD_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 136:function() {
-    this.adc_a(this.b)
+    var carry = this.f & F_CARRY;
+    var temp = this.a + this.b + carry & 255;
+    this.f = this.SZHVC_ADD_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 137:function() {
-    this.adc_a(this.c)
+    var carry = this.f & F_CARRY;
+    var temp = this.a + this.c + carry & 255;
+    this.f = this.SZHVC_ADD_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 138:function() {
-    this.adc_a(this.d)
+    var carry = this.f & F_CARRY;
+    var temp = this.a + this.d + carry & 255;
+    this.f = this.SZHVC_ADD_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 139:function() {
-    this.adc_a(this.e)
+    var carry = this.f & F_CARRY;
+    var temp = this.a + this.e + carry & 255;
+    this.f = this.SZHVC_ADD_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 140:function() {
-    this.adc_a(this.h)
+    var carry = this.f & F_CARRY;
+    var temp = this.a + this.h + carry & 255;
+    this.f = this.SZHVC_ADD_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 141:function() {
-    this.adc_a(this.l)
+    var carry = this.f & F_CARRY;
+    var temp = this.a + this.l + carry & 255;
+    this.f = this.SZHVC_ADD_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 142:function() {
-    this.adc_a(this.readMem(this.getHL()))
+    var carry = this.f & F_CARRY;
+    var temp = this.a + this.readMem(this.h << 8 | this.l) + carry & 255;
+    this.f = this.SZHVC_ADD_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 143:function() {
-    this.adc_a(this.a)
+    var carry = this.f & F_CARRY;
+    var temp = this.a + this.a + carry & 255;
+    this.f = this.SZHVC_ADD_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 144:function() {
-    this.sub_a(this.b)
+    var temp = this.a - this.b & 255;
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 145:function() {
-    this.sub_a(this.c)
+    var temp = this.a - this.c & 255;
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 146:function() {
-    this.sub_a(this.d)
+    var temp = this.a - this.d & 255;
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 147:function() {
-    this.sub_a(this.e)
+    var temp = this.a - this.e & 255;
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 148:function() {
-    this.sub_a(this.h)
+    var temp = this.a - this.h & 255;
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 149:function() {
-    this.sub_a(this.l)
+    var temp = this.a - this.l & 255;
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 150:function() {
-    this.sub_a(this.readMem(this.getHL()))
+    var temp = this.a - this.readMem(this.h << 8 | this.l) & 255;
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 151:function() {
-    this.sub_a(this.a)
+    var temp = this.a - this.a & 255;
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 152:function() {
-    this.sbc_a(this.b)
+    var carry = this.f & F_CARRY;
+    var temp = this.a - this.b - carry & 255;
+    this.f = this.SZHVC_SUB_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 153:function() {
-    this.sbc_a(this.c)
+    var carry = this.f & F_CARRY;
+    var temp = this.a - this.c - carry & 255;
+    this.f = this.SZHVC_SUB_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 154:function() {
-    this.sbc_a(this.d)
+    var carry = this.f & F_CARRY;
+    var temp = this.a - this.d - carry & 255;
+    this.f = this.SZHVC_SUB_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 155:function() {
-    this.sbc_a(this.e)
+    var carry = this.f & F_CARRY;
+    var temp = this.a - this.e - carry & 255;
+    this.f = this.SZHVC_SUB_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 156:function() {
-    this.sbc_a(this.h)
+    var carry = this.f & F_CARRY;
+    var temp = this.a - this.h - carry & 255;
+    this.f = this.SZHVC_SUB_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 157:function() {
-    this.sbc_a(this.l)
+    var carry = this.f & F_CARRY;
+    var temp = this.a - this.l - carry & 255;
+    this.f = this.SZHVC_SUB_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 158:function() {
-    this.sbc_a(this.readMem(this.getHL()))
+    var carry = this.f & F_CARRY;
+    var temp = this.a - this.readMem(this.h << 8 | this.l) - carry & 255;
+    this.f = this.SZHVC_SUB_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 159:function() {
-    this.sbc_a(this.a)
+    var carry = this.f & F_CARRY;
+    var temp = this.a - this.a - carry & 255;
+    this.f = this.SZHVC_SUB_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 160:function() {
     this.f = this.SZP_TABLE[this.a &= this.b] | F_HALFCARRY
   }, 161:function() {
@@ -755,7 +964,7 @@ var opcodeToJS = function(opcode) {
   }, 165:function() {
     this.f = this.SZP_TABLE[this.a &= this.l] | F_HALFCARRY
   }, 166:function() {
-    this.f = this.SZP_TABLE[this.a &= this.readMem(this.getHL())] | F_HALFCARRY
+    this.f = this.SZP_TABLE[this.a &= this.readMem(this.h << 8 | this.l)] | F_HALFCARRY
   }, 167:function() {
     this.f = this.SZP_TABLE[this.a] | F_HALFCARRY
   }, 168:function() {
@@ -771,7 +980,7 @@ var opcodeToJS = function(opcode) {
   }, 173:function() {
     this.f = this.SZP_TABLE[this.a ^= this.l]
   }, 174:function() {
-    this.f = this.SZP_TABLE[this.a ^= this.readMem(this.getHL())]
+    this.f = this.SZP_TABLE[this.a ^= this.readMem(this.h << 8 | this.l)]
   }, 175:function() {
     this.f = this.SZP_TABLE[this.a = 0]
   }, 176:function() {
@@ -787,106 +996,210 @@ var opcodeToJS = function(opcode) {
   }, 181:function() {
     this.f = this.SZP_TABLE[this.a |= this.l]
   }, 182:function() {
-    this.f = this.SZP_TABLE[this.a |= this.readMem(this.getHL())]
+    this.f = this.SZP_TABLE[this.a |= this.readMem(this.h << 8 | this.l)]
   }, 183:function() {
     this.f = this.SZP_TABLE[this.a]
   }, 184:function() {
-    this.cp_a(this.b)
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | this.a - this.b & 255]
   }, 185:function() {
-    this.cp_a(this.c)
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | this.a - this.c & 255]
   }, 186:function() {
-    this.cp_a(this.d)
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | this.a - this.d & 255]
   }, 187:function() {
-    this.cp_a(this.e)
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | this.a - this.e & 255]
   }, 188:function() {
-    this.cp_a(this.h)
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | this.a - this.h & 255]
   }, 189:function() {
-    this.cp_a(this.l)
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | this.a - this.l & 255]
   }, 190:function() {
-    this.cp_a(this.readMem(this.getHL()))
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | this.a - this.readMem(this.h << 8 | this.l) & 255]
   }, 191:function() {
-    this.cp_a(this.a)
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | this.a - this.a & 255]
   }, 192:function() {
-    this.ret((this.f & F_ZERO) == 0)
+    if((this.f & F_ZERO) == 0) {
+      this.pc = this.readMemWord(this.sp);
+      this.sp += 2;
+      this.tstates -= 6
+    }
   }, 193:function() {
     this.setBC(this.readMemWord(this.sp));
     this.sp += 2
   }, 194:function() {
-    this.jp((this.f & F_ZERO) == 0)
+    if((this.f & F_ZERO) == 0) {
+      this.pc = this.readMemWord(this.pc)
+    }else {
+      this.pc += 2
+    }
   }, 195:function() {
     this.pc = this.readMemWord(this.pc)
   }, 196:function() {
-    this.call((this.f & F_ZERO) == 0)
+    if((this.f & F_ZERO) == 0) {
+      this.writeMem(--this.sp, this.pc + 2 >> 8);
+      this.writeMem(--this.sp, this.pc + 2 & 255);
+      this.pc = this.readMemWord(this.pc);
+      this.tstates -= 7
+    }else {
+      this.pc += 2
+    }
   }, 197:function() {
-    this.push2(this.b, this.c)
+    this.writeMem(--this.sp, this.b);
+    this.writeMem(--this.sp, this.c)
   }, 198:function() {
-    this.add_a(this.readMem(this.pc++))
+    var temp = this.a + this.readMem(this.pc++) & 255;
+    this.f = this.SZHVC_ADD_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 199:function() {
-    this.push1(this.pc);
+    this.writeMem(--this.sp, this.pc >> 8);
+    this.writeMem(--this.sp, this.pc & 255);
     this.pc = 0
   }, 200:function() {
-    this.ret((this.f & F_ZERO) != 0)
+    if((this.f & F_ZERO) != 0) {
+      this.pc = this.readMemWord(this.sp);
+      this.sp += 2;
+      this.tstates -= 6
+    }
   }, 201:function() {
     this.pc = this.readMemWord(this.sp);
     this.sp += 2
   }, 202:function() {
-    this.jp((this.f & F_ZERO) != 0)
+    if((this.f & F_ZERO) != 0) {
+      this.pc = this.readMemWord(this.pc)
+    }else {
+      this.pc += 2
+    }
   }, 203:function() {
     this.doCB(this.readMem(this.pc++))
   }, 204:function() {
-    this.call((this.f & F_ZERO) != 0)
+    if((this.f & F_ZERO) != 0) {
+      this.writeMem(--this.sp, this.pc + 2 >> 8);
+      this.writeMem(--this.sp, this.pc + 2 & 255);
+      this.pc = this.readMemWord(this.pc);
+      this.tstates -= 7
+    }else {
+      this.pc += 2
+    }
   }, 205:function() {
-    this.push1(this.pc + 2);
+    this.writeMem(--this.sp, this.pc + 2 >> 8);
+    this.writeMem(--this.sp, this.pc + 2 & 255);
     this.pc = this.readMemWord(this.pc)
   }, 206:function() {
-    this.adc_a(this.readMem(this.pc++))
+    var carry = this.f & F_CARRY;
+    var temp = this.a + this.readMem(this.pc++) + carry & 255;
+    this.f = this.SZHVC_ADD_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 207:function() {
-    this.push1(this.pc);
+    this.writeMem(--this.sp, this.pc >> 8);
+    this.writeMem(--this.sp, this.pc & 255);
     this.pc = 8
   }, 208:function() {
-    this.ret((this.f & F_CARRY) == 0)
+    if((this.f & F_CARRY) == 0) {
+      this.pc = this.readMemWord(this.sp);
+      this.sp += 2;
+      this.tstates -= 6
+    }
   }, 209:function() {
-    this.setDE(this.readMemWord(this.sp));
+    var value = this.readMemWord(this.sp);
+    this.d = value >> 8;
+    this.e = value & 255;
     this.sp += 2
   }, 210:function() {
-    this.jp((this.f & F_CARRY) == 0)
+    if((this.f & F_CARRY) == 0) {
+      this.pc = this.readMemWord(this.pc)
+    }else {
+      this.pc += 2
+    }
   }, 211:function() {
     this.port.out(this.readMem(this.pc++), this.a)
   }, 212:function() {
-    this.call((this.f & F_CARRY) == 0)
+    if((this.f & F_CARRY) == 0) {
+      this.writeMem(--this.sp, this.pc + 2 >> 8);
+      this.writeMem(--this.sp, this.pc + 2 & 255);
+      this.pc = this.readMemWord(this.pc);
+      this.tstates -= 7
+    }else {
+      this.pc += 2
+    }
   }, 213:function() {
-    this.push2(this.d, this.e)
+    this.writeMem(--this.sp, this.d);
+    this.writeMem(--this.sp, this.e)
   }, 214:function() {
-    this.sub_a(this.readMem(this.pc++))
+    var temp = this.a - this.readMem(this.pc++) & 255;
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | temp];
+    this.a = temp
   }, 215:function() {
-    this.push1(this.pc);
+    this.writeMem(--this.sp, this.pc >> 8);
+    this.writeMem(--this.sp, this.pc & 255);
     this.pc = 16
   }, 216:function() {
-    this.ret((this.f & F_CARRY) != 0)
+    if((this.f & F_CARRY) != 0) {
+      this.pc = this.readMemWord(this.sp);
+      this.sp += 2;
+      this.tstates -= 6
+    }
   }, 217:function() {
-    this.exBC();
-    this.exDE();
-    this.exHL()
+    var temp = this.b;
+    this.b = this.b2;
+    this.b2 = temp;
+    temp = this.c;
+    this.c = this.c2;
+    this.c2 = temp;
+    temp = this.d;
+    this.d = this.d2;
+    this.d2 = temp;
+    temp = this.e;
+    this.e = this.e2;
+    this.e2 = temp;
+    temp = this.h;
+    this.h = this.h2;
+    this.h2 = temp;
+    temp = this.l;
+    this.l = this.l2;
+    this.l2 = temp
   }, 218:function() {
-    this.jp((this.f & F_CARRY) != 0)
+    if((this.f & F_CARRY) != 0) {
+      this.pc = this.readMemWord(this.pc)
+    }else {
+      this.pc += 2
+    }
   }, 219:function() {
     this.a = this.port.in_(this.readMem(this.pc++))
   }, 220:function() {
-    this.call((this.f & F_CARRY) != 0)
+    if((this.f & F_CARRY) != 0) {
+      this.writeMem(--this.sp, this.pc + 2 >> 8);
+      this.writeMem(--this.sp, this.pc + 2 & 255);
+      this.pc = this.readMemWord(this.pc);
+      this.tstates -= 7
+    }else {
+      this.pc += 2
+    }
   }, 221:function() {
     this.doIndexOpIX(this.readMem(this.pc++))
   }, 222:function() {
-    this.sbc_a(this.readMem(this.pc++))
+    var carry = this.f & F_CARRY;
+    var temp = this.a - this.readMem(this.pc++) - carry & 255;
+    this.f = this.SZHVC_SUB_TABLE[carry << 16 | this.a << 8 | temp];
+    this.a = temp
   }, 223:function() {
-    this.push1(this.pc);
+    this.writeMem(--this.sp, this.pc >> 8);
+    this.writeMem(--this.sp, this.pc & 255);
     this.pc = 24
   }, 224:function() {
-    this.ret((this.f & F_PARITY) == 0)
+    if((this.f & F_PARITY) == 0) {
+      this.pc = this.readMemWord(this.sp);
+      this.sp += 2;
+      this.tstates -= 6
+    }
   }, 225:function() {
-    this.setHL(this.readMemWord(this.sp));
+    var value = this.readMemWord(this.sp);
+    this.h = value >> 8;
+    this.l = value & 255;
     this.sp += 2
   }, 226:function() {
-    this.jp((this.f & F_PARITY) == 0)
+    if((this.f & F_PARITY) == 0) {
+      this.pc = this.readMemWord(this.pc)
+    }else {
+      this.pc += 2
+    }
   }, 227:function() {
     var temp = this.h;
     this.h = this.readMem(this.sp + 1);
@@ -895,20 +1208,37 @@ var opcodeToJS = function(opcode) {
     this.l = this.readMem(this.sp);
     this.writeMem(this.sp, temp)
   }, 228:function() {
-    this.call((this.f & F_PARITY) == 0)
+    if((this.f & F_PARITY) == 0) {
+      this.writeMem(--this.sp, this.pc + 2 >> 8);
+      this.writeMem(--this.sp, this.pc + 2 & 255);
+      this.pc = this.readMemWord(this.pc);
+      this.tstates -= 7
+    }else {
+      this.pc += 2
+    }
   }, 229:function() {
-    this.push2(this.h, this.l)
+    this.writeMem(--this.sp, this.h);
+    this.writeMem(--this.sp, this.l)
   }, 230:function() {
     this.f = this.SZP_TABLE[this.a &= this.readMem(this.pc++)] | F_HALFCARRY
   }, 231:function() {
-    this.push1(this.pc);
+    this.writeMem(--this.sp, this.pc >> 8);
+    this.writeMem(--this.sp, this.pc & 255);
     this.pc = 32
   }, 232:function() {
-    this.ret((this.f & F_PARITY) != 0)
+    if((this.f & F_PARITY) != 0) {
+      this.pc = this.readMemWord(this.sp);
+      this.sp += 2;
+      this.tstates -= 6
+    }
   }, 233:function() {
-    this.pc = this.getHL()
+    this.pc = this.h << 8 | this.l
   }, 234:function() {
-    this.jp((this.f & F_PARITY) != 0)
+    if((this.f & F_PARITY) != 0) {
+      this.pc = this.readMemWord(this.pc)
+    }else {
+      this.pc += 2
+    }
   }, 235:function() {
     var temp = this.d;
     this.d = this.h;
@@ -917,50 +1247,91 @@ var opcodeToJS = function(opcode) {
     this.e = this.l;
     this.l = temp
   }, 236:function() {
-    this.call((this.f & F_PARITY) != 0)
+    if((this.f & F_PARITY) != 0) {
+      this.writeMem(--this.sp, this.pc + 2 >> 8);
+      this.writeMem(--this.sp, this.pc + 2 & 255);
+      this.pc = this.readMemWord(this.pc);
+      this.tstates -= 7
+    }else {
+      this.pc += 2
+    }
   }, 237:function() {
     this.doED(this.readMem(this.pc))
   }, 238:function() {
     this.f = this.SZP_TABLE[this.a ^= this.readMem(this.pc++)]
   }, 239:function() {
-    this.push1(this.pc);
+    this.writeMem(--this.sp, this.pc >> 8);
+    this.writeMem(--this.sp, this.pc & 255);
     this.pc = 40
   }, 240:function() {
-    this.ret((this.f & F_SIGN) == 0)
+    if((this.f & F_SIGN) == 0) {
+      this.pc = this.readMemWord(this.sp);
+      this.sp += 2;
+      this.tstates -= 6
+    }
   }, 241:function() {
     this.f = this.readMem(this.sp++);
     this.a = this.readMem(this.sp++)
   }, 242:function() {
-    this.jp((this.f & F_SIGN) == 0)
+    if((this.f & F_SIGN) == 0) {
+      this.pc = this.readMemWord(this.pc)
+    }else {
+      this.pc += 2
+    }
   }, 243:function() {
     this.iff1 = this.iff2 = false;
     this.EI_inst = true
   }, 244:function() {
-    this.call((this.f & F_SIGN) == 0)
+    if((this.f & F_SIGN) == 0) {
+      this.writeMem(--this.sp, this.pc + 2 >> 8);
+      this.writeMem(--this.sp, this.pc + 2 & 255);
+      this.pc = this.readMemWord(this.pc);
+      this.tstates -= 7
+    }else {
+      this.pc += 2
+    }
   }, 245:function() {
-    this.push2(this.a, this.f)
+    this.writeMem(--this.sp, this.a);
+    this.writeMem(--this.sp, this.f)
   }, 246:function() {
     this.f = this.SZP_TABLE[this.a |= this.readMem(this.pc++)]
   }, 247:function() {
-    this.push1(this.pc);
+    this.writeMem(--this.sp, this.pc >> 8);
+    this.writeMem(--this.sp, this.pc & 255);
     this.pc = 48
   }, 248:function() {
-    this.ret((this.f & F_SIGN) != 0)
+    if((this.f & F_SIGN) != 0) {
+      this.pc = this.readMemWord(this.sp);
+      this.sp += 2;
+      this.tstates -= 6
+    }
   }, 249:function() {
-    this.sp = this.getHL()
+    this.sp = this.h << 8 | this.l
   }, 250:function() {
-    this.jp((this.f & F_SIGN) != 0)
+    if((this.f & F_SIGN) != 0) {
+      this.pc = this.readMemWord(this.pc)
+    }else {
+      this.pc += 2
+    }
   }, 251:function() {
     this.iff1 = this.iff2 = true;
     this.EI_inst = true
   }, 252:function() {
-    this.call((this.f & F_SIGN) != 0)
+    if((this.f & F_SIGN) != 0) {
+      this.writeMem(--this.sp, this.pc + 2 >> 8);
+      this.writeMem(--this.sp, this.pc + 2 & 255);
+      this.pc = this.readMemWord(this.pc);
+      this.tstates -= 7
+    }else {
+      this.pc += 2
+    }
   }, 253:function() {
     this.doIndexOpIY(this.readMem(this.pc++))
   }, 254:function() {
-    this.cp_a(this.readMem(this.pc++))
+    this.f = this.SZHVC_SUB_TABLE[this.a << 8 | this.a - this.readMem(this.pc++) & 255]
   }, 255:function() {
-    this.push1(this.pc);
+    this.writeMem(--this.sp, this.pc >> 8);
+    this.writeMem(--this.sp, this.pc & 255);
     this.pc = 56
   }};
   return opcodeToInst[opcode].toString()
@@ -1738,7 +2109,7 @@ function getOpCode(opcode) {
   }
   return"Unknown Opcode"
 }
-;var HALT_SPEEDUP = false;
+;var HALT_SPEEDUP = true;
 var F_CARRY = 1;
 var F_NEGATIVE = 2;
 var F_PARITY = 4;
@@ -1806,7 +2177,6 @@ JSSMS.Z80 = function(sms) {
   this.blocks = Object.create(null);
   this.entryPC = 0;
   this.prevOpcode = 0;
-  this.instNum = 0;
   this.blockInstructions = [];
   this.opcodeInstructions = buildOpcodeInsts();
   this.rom = [];
@@ -1856,8 +2226,7 @@ JSSMS.Z80.prototype = {reset:function() {
   this.blocks = Object.create(null);
   this.entryPC = 0;
   this.prevOpcode = this.readMem(0);
-  this.instNum = 0;
-  this.blockInstructions = []
+  this.blockInstructions = [this.prevOpcode]
 }, getOp:function() {
   var opcode = this.readMem(this.pc);
   var oplist = (opcode & 255).toString(16);
@@ -1899,9 +2268,9 @@ JSSMS.Z80.prototype = {reset:function() {
   this.exHL()
 }, run:function(cycles, cyclesTo) {
   var self = this;
-  var location;
+  var location = 0;
   var opcode = 0;
-  var temp;
+  var temp = 0;
   this.tstates += cycles;
   if(cycles != 0) {
     this.totalCycles = cycles
@@ -1912,11 +2281,9 @@ JSSMS.Z80.prototype = {reset:function() {
     }
   }
   while(this.tstates > cyclesTo) {
-    if(ENABLE_DYNAREC && this.hitCounts[this.pc] >= HOT_BLOCK_THRESHOLD && this.blocks[this.pc].instNum > 1) {
-      this.hitCounts[this.pc]++;
-      this.blocks[this.pc].blockInstructions(cyclesTo);
+    if(ENABLE_DYNAREC && this.blocks[this.pc]) {
+      this.blocks[this.pc].call(this, cyclesTo);
       this.entryPC = this.pc;
-      this.instNum = 0;
       this.blockInstructions = [];
       return
     }
@@ -1928,21 +2295,17 @@ JSSMS.Z80.prototype = {reset:function() {
     opcode = this.readMem(this.pc);
     if(isEndingInst(this.prevOpcode)) {
       this.hitCounts[this.entryPC]++;
-      if(!this.blocks[this.entryPC]) {
-        this.blocks[this.entryPC] = Object.create(null);
-        this.blocks[this.entryPC].instNum = this.instNum;
+      if(this.hitCounts[this.pc] >= HOT_BLOCK_THRESHOLD && this.blockInstructions.length) {
         var blockFunction = this.blockInstructions.map(function(opcode) {
           return self.opcodeInstructions[opcode]
         }).join("\n" + "if (!(this.tstates > cyclesTo)) return;" + "\n\n");
-        blockFunction = (new Function("return function block_" + toHex(this.entryPC) + "_" + this.instNum + "(cyclesTo) {\n" + blockFunction + "}"))();
-        this.blocks[this.entryPC].blockInstructions = blockFunction.bind(this)
+        blockFunction = (new Function("return function block_" + toHex(this.entryPC) + "_" + blockFunction.length + "(cyclesTo) {\n" + blockFunction + "}"))();
+        this.blocks[this.entryPC] = blockFunction
       }
       this.entryPC = this.pc;
-      this.instNum = 0;
       this.blockInstructions = []
     }
     this.prevOpcode = opcode;
-    this.instNum++;
     this.blockInstructions.push(opcode);
     this.pc++;
     if(Setup.ACCURATE_INTERRUPT_EMULATION) {
@@ -5719,8 +6082,11 @@ JSSMS.Vdp.prototype = {reset:function() {
   for(i = 0;i < 16384;i++) {
     this.VRAM[i] = 0
   }
-  for(i = 0;i < SMS_WIDTH * SMS_HEIGHT * 4;i++) {
-    this.display[i] = 255
+  for(i = 0;i < SMS_WIDTH * SMS_HEIGHT * 4;i = i + 4) {
+    this.display[i] = 0;
+    this.display[i + 1] = 0;
+    this.display[i + 2] = 0;
+    this.display[i + 3] = 255
   }
 }, forceFullRedraw:function() {
   this.bgt = (this.vdpreg[2] & 15 & ~1) << 10;
@@ -5838,12 +6204,9 @@ JSSMS.Vdp.prototype = {reset:function() {
           temp = ((this.location & 63) >> 1) * 3;
           if((this.location & 1) == 0) {
             this.CRAM[temp] = this.GG_JAVA1[value] & 255;
-            this.CRAM[temp + 1] = this.GG_JAVA1[value] >> 8 & 255;
-            this.CRAM[temp + 2] = this.GG_JAVA1[value] >> 16 & 255
+            this.CRAM[temp + 1] = this.GG_JAVA1[value] >> 8 & 255
           }else {
-            this.CRAM[temp] |= this.GG_JAVA2[value & 15] & 255;
-            this.CRAM[temp + 1] |= this.GG_JAVA2[value & 15] >> 8 & 255;
-            this.CRAM[temp + 2] |= this.GG_JAVA2[value & 15] >> 8 & 255
+            this.CRAM[temp + 2] = this.GG_JAVA2[value & 15] >> 16 & 255
           }
         }
       }
@@ -6209,7 +6572,21 @@ if(typeof $ != "undefined") {
       var root = $("<div></div>");
       var controls = $('<div class="controls"></div>');
       var fullscreenSupport = JSSMS.Utils.getPrefix(["fullscreenEnabled", "mozFullScreenEnabled", "webkitCancelFullScreen"]);
+      var requestAnimationFramePrefix = JSSMS.Utils.getPrefix(["requestAnimationFrame", "msRequestAnimationFrame", "mozRequestAnimationFrame", "webkitRequestAnimationFrame", "oRequestAnimationFrame"], window);
       var i;
+      if(requestAnimationFramePrefix) {
+        this.requestAnimationFrame = window[requestAnimationFramePrefix].bind(window)
+      }else {
+        var lastTime = 0;
+        this.requestAnimationFrame = function(callback) {
+          var currTime = JSSMS.Utils.getTimestamp();
+          var timeToCall = Math.max(0, 16 - (currTime - lastTime));
+          window.setTimeout(function() {
+            callback(currTime + timeToCall)
+          }, timeToCall);
+          lastTime = currTime + timeToCall
+        }
+      }
       this.zoomed = false;
       this.hiddenPrefix = JSSMS.Utils.getPrefix(["hidden", "mozHidden", "webkitHidden", "msHidden"]);
       this.screen = $("<canvas width=" + SMS_WIDTH + " height=" + SMS_HEIGHT + ' class="screen"></canvas>');
@@ -6219,7 +6596,6 @@ if(typeof $ != "undefined") {
         return
       }
       this.canvasImageData = this.canvasContext.getImageData(0, 0, SMS_WIDTH, SMS_HEIGHT);
-      this.resetCanvas();
       this.romContainer = $("<div></div>");
       this.romSelect = $("<select></select>");
       this.romSelect.change(function() {
@@ -6297,12 +6673,6 @@ if(typeof $ != "undefined") {
       this.screen[0].width = SMS_WIDTH;
       this.screen[0].height = SMS_HEIGHT;
       this.log.text("")
-    }, resetCanvas:function() {
-      this.canvasContext.fillStyle = "black";
-      this.canvasContext.fillRect(0, 0, SMS_WIDTH, SMS_HEIGHT);
-      for(var i = 3;i <= this.canvasImageData.data.length - 3;i += 4) {
-        this.canvasImageData.data[i] = 255
-      }
     }, setRoms:function(roms) {
       var groupName, optgroup, length, i, count = 0;
       this.romSelect.children().remove();
@@ -6365,32 +6735,7 @@ if(typeof $ != "undefined") {
     return UI
   }
 }
-(function() {
-  var lastTime = 0;
-  var vendors = ["ms", "moz", "webkit", "o"];
-  var x;
-  for(x = 0;x < vendors.length && !window.requestAnimationFrame;++x) {
-    window.requestAnimationFrame = window[vendors[x] + "RequestAnimationFrame"];
-    window.cancelAnimationFrame = window[vendors[x] + "CancelAnimationFrame"] || window[vendors[x] + "CancelRequestAnimationFrame"]
-  }
-  if(!window.requestAnimationFrame) {
-    window.requestAnimationFrame = function(callback, element) {
-      var currTime = JSSMS.Utils.getTimestamp();
-      var timeToCall = Math.max(0, 16 - (currTime - lastTime));
-      var id = window.setTimeout(function() {
-        callback(currTime + timeToCall)
-      }, timeToCall);
-      lastTime = currTime + timeToCall;
-      return id
-    }
-  }
-  if(!window.cancelAnimationFrame) {
-    window.cancelAnimationFrame = function(id) {
-      clearTimeout(id)
-    }
-  }
-})();
-var IO_TR_DIRECTION = 0;
+;var IO_TR_DIRECTION = 0;
 var IO_TH_DIRECTION = 1;
 var IO_TR_OUTPUT = 2;
 var IO_TH_OUTPUT = 3;

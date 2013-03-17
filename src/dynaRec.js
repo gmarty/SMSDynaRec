@@ -178,19 +178,22 @@ var opcodeToJS = function(opcode) {
     },
     0x02: function() {
       // LD (BC),A
-      this.writeMem(this.getBC(), this.a);
+      this.writeMem((this.b << 8) | this.c, this.a);
     },
     0x03: function() {
       // INC BC
-      this.incBC();
+      this.c = (this.c + 1) & 0xff;
+      if (this.c == 0) this.b = (this.b + 1) & 0xff;
     },
     0x04: function() {
       // INC B
-      this.b = this.inc8(this.b);
+      this.b = (this.b + 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_INC_TABLE[this.b];
     },
     0x05: function() {
       // DEC B
-      this.b = this.dec8(this.b);
+      this.b = (this.b - 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_DEC_TABLE[this.b];
     },
     0x06: function() {
       // LD B,n
@@ -198,31 +201,48 @@ var opcodeToJS = function(opcode) {
     },
     0x07: function() {
       // RLCA
-      this.rlca_a();
+      // Transfer Original Bit 7 to Bit 0 and Carry Flag
+      var carry = this.a >> 7;
+
+      // Shift register left
+      this.a = ((this.a << 1) & 0xff) | carry;
+
+      // Retain Sign, Zero, Bit 5, Bit 3 and Parity
+      this.f = (this.f & 0xec) | carry;
     },
     0x08: function() {
       // EX AF AF'
-      this.exAF();
+      var temp = this.a; this.a = this.a2; this.a2 = temp;
+      temp = this.f; this.f = this.f2; this.f2 = temp;
     },
     0x09: function() {
       // ADD HL,BC
-      this.setHL(this.add16(this.getHL(), this.getBC()));
+      var reg = (this.h << 8) | this.l;
+      var value = (this.b << 8) | this.c;
+      var result = reg + value;
+      this.f = (this.f & 0xc4) | (((reg ^ result ^ value) >> 8) & 0x10) | ((result >> 16) & 1);
+      var value1 = result & 0xffff;
+      this.h = (value1 >> 8);
+      this.l = value1 & 0xff;
     },
     0x0A: function() {
       // LD A,(BC)
-      this.a = this.readMem(this.getBC());
+      this.a = this.readMem((this.b << 8) | this.c);
     },
     0x0B: function() {
       // DEC BC
-      this.decBC();
+      this.c = (this.c - 1) & 0xff;
+      if (this.c == 255) this.b = (this.b - 1) & 0xff;
     },
     0x0C: function() {
       // INC C
-      this.c = this.inc8(this.c);
+      this.c = (this.c + 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_INC_TABLE[this.c];
     },
     0x0D: function() {
       // DEC C
-      this.c = this.dec8(this.c);
+      this.c = (this.c - 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_DEC_TABLE[this.c];
     },
     0x0E: function() {
       // LD C,n
@@ -230,12 +250,26 @@ var opcodeToJS = function(opcode) {
     },
     0x0F: function() {
       // RRCA
-      this.rrca_a();
+      var carry = this.a & 1;
+
+      this.a = (this.a >> 1) | (carry << 7);
+
+      // Retain Sign, Zero, Bit 5, Bit 3 and Parity
+      this.f = (this.f & 0xec) | carry;
     },
     0x10: function() {
       // DJNZ (PC+e)
       this.b = (this.b - 1) & 0xff;
-      this.jr(this.b != 0);
+      if (this.b != 0) {
+        var d = this.d_() + 1;
+        // The previous syntax had Firefox to mark these lines as unknown arithmetic type.
+        if (d >= 128) {
+          d = d - 256;
+        }
+        this.pc += d;
+        this.tstates -= 5;
+      }
+      else this.pc++;
     },
     0x11: function() {
       // LD DE,nn
@@ -244,19 +278,22 @@ var opcodeToJS = function(opcode) {
     },
     0x12: function() {
       // LD (DE), A
-      this.writeMem(this.getDE(), this.a);
+      this.writeMem((this.d << 8) | this.e, this.a);
     },
     0x13: function() {
       // INC DE
-      this.incDE();
+      this.e = (this.e + 1) & 0xff;
+      if (this.e == 0) this.d = (this.d + 1) & 0xff;
     },
     0x14: function() {
       // INC D
-      this.d = this.inc8(this.d);
+      this.d = (this.d + 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_INC_TABLE[this.d];
     },
     0x15: function() {
       // DEC D
-      this.d = this.dec8(this.d);
+      this.d = (this.d - 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_DEC_TABLE[this.d];
     },
     0x16: function() {
       // LD D,n
@@ -264,31 +301,40 @@ var opcodeToJS = function(opcode) {
     },
     0x17: function() {
       // RLA
-      this.rla_a();
+      var carry = this.a >> 7; // bit 7 rotates to carry flag
+      this.a = ((this.a << 1) | (this.f & F_CARRY)) & 0xff;
+      this.f = (this.f & 0xec) | carry;
     },
     0x18: function() {
       // JR (PC+e)
-      this.pc += this.d_() + 1;
+      this.pc += this.readMem(this.pc) + 1;
     },
     0x19: function() {
       // ADD HL,DE
-      this.setHL(this.add16(this.getHL(), this.getDE()));
+      var result = ((this.h << 8) | this.l) + ((this.d << 8) | this.e);
+      this.f = (this.f & 0xc4) | (((((this.h << 8) | this.l) ^ result ^ ((this.d << 8) | this.e)) >> 8) & 0x10) | ((result >> 16) & 1);
+
+      this.h = ((result & 0xffff) >> 8);
+      this.l = (result & 0xffff) & 0xff;
     },
     0x1A: function() {
       // LD A,(DE)
-      this.a = this.readMem(this.getDE());
+      this.a = this.readMem((this.d << 8) | this.e);
     },
     0x1B: function() {
       // DEC DE
-      this.decDE();
+      this.e = (this.e - 1) & 0xff;
+      if (this.e == 255) this.d = (this.d - 1) & 0xff;
     },
     0x1C: function() {
       // INC E
-      this.e = this.inc8(this.e);
+      this.e = (this.e + 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_INC_TABLE[this.e];
     },
     0x1D: function() {
       // DEC E
-      this.e = this.dec8(this.e);
+      this.e = (this.e - 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_DEC_TABLE[this.e];
     },
     0x1E: function() {
       // LD E,N
@@ -296,11 +342,22 @@ var opcodeToJS = function(opcode) {
     },
     0x1F: function() {
       // RRA
-      this.rra_a();
+      var carry = this.a & 1; // bit 1 rotates to carry flag
+      this.a = ((this.a >> 1) | (this.f & F_CARRY) << 7) & 0xff; // Shift Right One Bit Position
+      this.f = (this.f & 0xec) | carry;
     },
     0x20: function() {
       // JR NZ,(PC+e)
-      this.jr(!((this.f & F_ZERO) != 0));
+      if (!((this.f & F_ZERO) != 0)) {
+        var d = this.d_() + 1;
+        // The previous syntax had Firefox to mark these lines as unknown arithmetic type.
+        if (d >= 128) {
+          d = d - 256;
+        }
+        this.pc += d;
+        this.tstates -= 5;
+      }
+      else this.pc++;
     },
     0x21: function() {
       // LD HL,nn
@@ -316,15 +373,18 @@ var opcodeToJS = function(opcode) {
     },
     0x23: function() {
       // INC HL
-      this.incHL();
+      this.l = (this.l + 1) & 0xff;
+      if (this.l == 0) this.h = (this.h + 1) & 0xff;
     },
     0x24: function() {
       // INC H
-      this.h = this.inc8(this.h);
+      this.h = (this.h + 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_INC_TABLE[this.h];
     },
     0x25: function() {
       // DEC H
-      this.h = this.dec8(this.h);
+      this.h = (this.h - 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_DEC_TABLE[this.h];
     },
     0x26: function() {
       // LD H,n
@@ -332,18 +392,33 @@ var opcodeToJS = function(opcode) {
     },
     0x27: function() {
       // DAA
-      this.daa();
+      // Get result for calculated table (carry flag = bit 8, negative = bit 9, halfcarry = bit 10)
+      var temp = this.DAA_TABLE[this.a | ((this.f & F_CARRY) << 8) | ((this.f & F_NEGATIVE) << 8) | ((this.f & F_HALFCARRY) << 6)];
+      this.a = temp & 0xFF;
+      this.f = (this.f & F_NEGATIVE) | (temp >> 8);
     },
     0x28: function() {
       // JR Z,(PC+e)
-      this.jr(((this.f & F_ZERO) != 0));
+      if (((this.f & F_ZERO) != 0)) {
+        var d = this.d_() + 1;
+        // The previous syntax had Firefox to mark these lines as unknown arithmetic type.
+        if (d >= 128) {
+          d = d - 256;
+        }
+        this.pc += d;
+        this.tstates -= 5;
+      }
+      else this.pc++;
     },
     0x29: function() {
       // ADD HL,HL
-      this.setHL(this.add16(this.getHL(), this.getHL()));
+      var result = ((this.h << 8) | this.l) + ((this.h << 8) | this.l);
+      this.f = (this.f & 0xc4) | (((((this.h << 8) | this.l) ^ result ^ ((this.h << 8) | this.l)) >> 8) & 0x10) | ((result >> 16) & 1);
+
+      this.h = ((result & 0xffff) >> 8);
+      this.l = (result & 0xffff) & 0xff;
     },
     0x2A: function() {
-      // LD HL,(nn)
       var location = this.readMemWord(this.pc);
       this.l = this.readMem(location);
       this.h = this.readMem(location + 1);
@@ -351,15 +426,18 @@ var opcodeToJS = function(opcode) {
     },
     0x2B: function() {
       // DEC HL
-      this.decHL();
+      this.l = (this.l - 1) & 0xff;
+      if (this.l == 255) this.h = (this.h - 1) & 0xff;
     },
     0x2C: function() {
       // INC L
-      this.l = this.inc8(this.l);
+      this.l = (this.l + 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_INC_TABLE[this.l];
     },
     0x2D: function() {
       // DEC L
-      this.l = this.dec8(this.l);
+      this.l = (this.l - 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_DEC_TABLE[this.l];
     },
     0x2E: function() {
       // LD L,n
@@ -367,11 +445,21 @@ var opcodeToJS = function(opcode) {
     },
     0x2F: function() {
       // CPL
-      this.cpl_a();
+      this.a ^= 0xFF;
+      this.f |= (F_NEGATIVE | F_HALFCARRY);
     },
     0x30: function() {
       // JR NC,(PC+e)
-      this.jr(!((this.f & F_CARRY) != 0));
+      if (!((this.f & F_CARRY) != 0)) {
+        var d = this.d_() + 1;
+        // The previous syntax had Firefox to mark these lines as unknown arithmetic type.
+        if (d >= 128) {
+          d = d - 256;
+        }
+        this.pc += d;
+        this.tstates -= 5;
+      }
+      else this.pc++;
     },
     0x31: function() {
       // LD SP,nn
@@ -389,15 +477,19 @@ var opcodeToJS = function(opcode) {
     },
     0x34: function() {
       // INC (HL)
-      this.incMem(this.getHL());
+      this.writeMem((this.h << 8) | this.l, this.inc8(this.readMem((this.h << 8) | this.l)));
     },
     0x35: function() {
       // DEC (HL)
-      this.decMem(this.getHL());
+      var offset = (this.h << 8) | this.l;
+      var value = this.readMem(offset);
+      value = (value - 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_DEC_TABLE[value];
+      this.writeMem(offset, value);
     },
     0x36: function() {
       // LD (HL),n
-      this.writeMem(this.getHL(), this.readMem(this.pc++));
+      this.writeMem((this.h << 8) | this.l, this.readMem(this.pc++));
     },
     0x37: function() {
       // SCF
@@ -407,11 +499,24 @@ var opcodeToJS = function(opcode) {
     },
     0x38: function() {
       // JR C,(PC+e)
-      this.jr((this.f & F_CARRY) != 0);
+      if ((this.f & F_CARRY) != 0) {
+        var d = this.d_() + 1;
+        // The previous syntax had Firefox to mark these lines as unknown arithmetic type.
+        if (d >= 128) {
+          d = d - 256;
+        }
+        this.pc += d;
+        this.tstates -= 5;
+      }
+      else this.pc++;
     },
     0x39: function() {
       // ADD HL,SP
-      this.setHL(this.add16(this.getHL(), this.sp));
+      var result = ((this.h << 8) | this.l) + this.sp;
+      this.f = (this.f & 0xc4) | (((((this.h << 8) | this.l) ^ result ^ this.sp) >> 8) & 0x10) | ((result >> 16) & 1);
+
+      this.h = ((result & 0xffff) >> 8);
+      this.l = (result & 0xffff) & 0xff;
     },
     0x3A: function() {
       // LD A,(nn)
@@ -424,11 +529,13 @@ var opcodeToJS = function(opcode) {
     },
     0x3C: function() {
       // INC A
-      this.a = this.inc8(this.a);
+      this.a = (this.a + 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_INC_TABLE[this.a];
     },
     0x3D: function() {
       // DEC A
-      this.a = this.dec8(this.a);
+      this.a = (this.a - 1) & 0xff;
+      this.f = (this.f & F_CARRY) | this.SZHV_DEC_TABLE[this.a];
     },
     0x3E: function() {
       // LD A,n
@@ -436,7 +543,14 @@ var opcodeToJS = function(opcode) {
     },
     0x3F: function() {
       // CCF
-      this.ccf();
+      if ((this.f & F_CARRY) != 0) {
+        this.f &= ~ F_CARRY;
+        this.f |= F_HALFCARRY;
+      } else {
+        this.f |= F_CARRY;
+        this.f &= ~ F_HALFCARRY;
+      }
+      this.f &= ~ F_NEGATIVE;
     },
     0x40: function() {
       // LD B,B
@@ -463,7 +577,7 @@ var opcodeToJS = function(opcode) {
     },
     0x46: function() {
       // LD B,(HL)
-      this.b = this.readMem(this.getHL());
+      this.b = this.readMem((this.h << 8) | this.l);
     },
     0x47: function() {
       // LD B,A
@@ -494,7 +608,7 @@ var opcodeToJS = function(opcode) {
     },
     0x4E: function() {
       // LD C,(HL)
-      this.c = this.readMem(this.getHL());
+      this.c = this.readMem((this.h << 8) | this.l);
     },
     0x4F: function() {
       // LD C,A
@@ -525,7 +639,7 @@ var opcodeToJS = function(opcode) {
     },
     0x56: function() {
       // LD D,(HL)
-      this.d = this.readMem(this.getHL());
+      this.d = this.readMem((this.h << 8) | this.l);
     },
     0x57: function() {
       // LD D,A
@@ -556,7 +670,7 @@ var opcodeToJS = function(opcode) {
     },
     0x5E: function() {
       // LD E,(HL)
-      this.e = this.readMem(this.getHL());
+      this.e = this.readMem((this.h << 8) | this.l);
     },
     0x5F: function() {
       // LD E,A
@@ -587,7 +701,7 @@ var opcodeToJS = function(opcode) {
     },
     0x66: function() {
       // LD H,(HL)
-      this.h = this.readMem(this.getHL());
+      this.h = this.readMem((this.h << 8) | this.l);
     },
     0x67: function() {
       // LD H,A
@@ -618,7 +732,7 @@ var opcodeToJS = function(opcode) {
     },
     0x6E: function() {
       // LD L,(HL)
-      this.l = this.readMem(this.getHL());
+      this.l = this.readMem((this.h << 8) | this.l);
     },
     0x6F: function() {
       // LD L,A
@@ -626,37 +740,47 @@ var opcodeToJS = function(opcode) {
     },
     0x70: function() {
       // LD (HL),B
-      this.writeMem(this.getHL(), this.b);
+      this.writeMem((this.h << 8) | this.l, this.b);
     },
     0x71: function() {
       // LD (HL),C
-      this.writeMem(this.getHL(), this.c);
+      this.writeMem((this.h << 8) | this.l, this.c);
     },
     0x72: function() {
       // LD (HL),D
-      this.writeMem(this.getHL(), this.d);
+      this.writeMem((this.h << 8) | this.l, this.d);
     },
     0x73: function() {
       // LD (HL),E
-      this.writeMem(this.getHL(), this.e);
+      this.writeMem((this.h << 8) | this.l, this.e);
     },
     0x74: function() {
       // LD (HL),H
-      this.writeMem(this.getHL(), this.h);
+      this.writeMem((this.h << 8) | this.l, this.h);
     },
     0x75: function() {
       // LD (HL),L
-      this.writeMem(this.getHL(), this.l);
+      this.writeMem((this.h << 8) | this.l, this.l);
     },
     0x76: function() {
-      // HALT
-      if (HALT_SPEEDUP) this.tstates = 0;
-      this.halt = true;
-      this.pc--;
-    },
+      if (HALT_SPEEDUP) {
+        return function() {
+          // HALT
+          this.tstates = 0;
+          this.halt = true;
+          this.pc--;
+        };
+      } else {
+        return function() {
+          // HALT
+          this.halt = true;
+          this.pc--;
+        };
+      }
+    }(),
     0x77: function() {
       // LD (HL),A
-      this.writeMem(this.getHL(), this.a);
+      this.writeMem((this.h << 8) | this.l, this.a);
     },
     0x78: function() {
       // LD A,B
@@ -684,138 +808,218 @@ var opcodeToJS = function(opcode) {
     },
     0x7E: function() {
       // LD A,(HL)
-      this.a = this.readMem(this.getHL());
+      this.a = this.readMem((this.h << 8) | this.l);
     },
     0x7F: function() {
       // LD A,A
     },
     0x80: function() {
       // ADD A,B
-      this.add_a(this.b);
+      var temp = (this.a + this.b) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x81: function() {
       // ADD A,C
-      this.add_a(this.c);
+      var temp = (this.a + this.c) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x82: function() {
       // ADD A,D
-      this.add_a(this.d);
+      var temp = (this.a + this.d) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x83: function() {
       // ADD A,E
-      this.add_a(this.e);
+      var temp = (this.a + this.e) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x84: function() {
       // ADD A,H
-      this.add_a(this.h);
+      var temp = (this.a + this.h) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x85: function() {
       // ADD A,L
-      this.add_a(this.l);
+      var temp = (this.a + this.l) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x86: function() {
       // ADD A,(HL)
-      this.add_a(this.readMem(this.getHL()));
+      var temp = (this.a + this.readMem((this.h << 8) | this.l)) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x87: function() {
       // ADD A,A
-      this.add_a(this.a);
+      var temp = (this.a + this.a) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x88: function() {
       // ADC A,B
-      this.adc_a(this.b);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a + this.b + carry) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x89: function() {
       // ADC A,C
-      this.adc_a(this.c);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a + this.c + carry) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x8A: function() {
       // ADC A,D
-      this.adc_a(this.d);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a + this.d + carry) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x8B: function() {
       // ADC A,E
-      this.adc_a(this.e);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a + this.e + carry) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x8C: function() {
       // ADC A,H
-      this.adc_a(this.h);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a + this.h + carry) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x8D: function() {
       // ADC A,L
-      this.adc_a(this.l);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a + this.l + carry) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x8E: function() {
       // ADC A,(HL)
-      this.adc_a(this.readMem(this.getHL()));
+      var carry = this.f & F_CARRY;
+      var temp = (this.a + this.readMem((this.h << 8) | this.l) + carry) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x8F: function() {
       // ADC A,A
-      this.adc_a(this.a);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a + this.a + carry) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x90: function() {
       // SUB A,B
-      this.sub_a(this.b);
+      var temp = (this.a - this.b) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x91: function() {
       // SUB A,C
-      this.sub_a(this.c);
+      var temp = (this.a - this.c) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x92: function() {
       // SUB A,D
-      this.sub_a(this.d);
+      var temp = (this.a - this.d) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x93: function() {
       // SUB A,E
-      this.sub_a(this.e);
+      var temp = (this.a - this.e) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x94: function() {
       // SUB A,H
-      this.sub_a(this.h);
+      var temp = (this.a - this.h) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x95: function() {
       // SUB A,L
-      this.sub_a(this.l);
+      var temp = (this.a - this.l) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x96: function() {
       // SUB A,(HL)
-      this.sub_a(this.readMem(this.getHL()));
+      var temp = (this.a - this.readMem((this.h << 8) | this.l)) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x97: function() {
       // SUB A,A
-      this.sub_a(this.a);
+      var temp = (this.a - this.a) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0x98: function() {
       // SBC A,B
-      this.sbc_a(this.b);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a - this.b - carry) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x99: function() {
       // SBC A,C
-      this.sbc_a(this.c);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a - this.c - carry) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x9A: function() {
       // SBC A,D
-      this.sbc_a(this.d);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a - this.d - carry) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x9B: function() {
       // SBC A,E
-      this.sbc_a(this.e);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a - this.e - carry) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x9C: function() {
       // SBC A,H
-      this.sbc_a(this.h);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a - this.h - carry) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x9D: function() {
       // SBC A,L
-      this.sbc_a(this.l);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a - this.l - carry) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x9E: function() {
       // SBC A,(HL)
-      this.sbc_a(this.readMem(this.getHL()));
+      var carry = this.f & F_CARRY;
+      var temp = (this.a - this.readMem((this.h << 8) | this.l) - carry) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0x9F: function() {
       // SBC A,A
-      this.sbc_a(this.a);
+      var carry = this.f & F_CARRY;
+      var temp = (this.a - this.a - carry) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0xA0: function() {
       // AND A,B
@@ -843,7 +1047,7 @@ var opcodeToJS = function(opcode) {
     },
     0xA6: function() {
       // AND A,(HL)
-      this.f = this.SZP_TABLE[this.a &= this.readMem(this.getHL())] | F_HALFCARRY;
+      this.f = this.SZP_TABLE[this.a &= this.readMem((this.h << 8) | this.l)] | F_HALFCARRY;
     },
     0xA7: function() {
       // AND A,A
@@ -875,7 +1079,7 @@ var opcodeToJS = function(opcode) {
     },
     0xAE: function() {
       // XOR A,(HL)
-      this.f = this.SZP_TABLE[this.a ^= this.readMem(this.getHL())];
+      this.f = this.SZP_TABLE[this.a ^= this.readMem((this.h << 8) | this.l)];
     },
     0xAF: function() {
       // XOR A,A (=0)
@@ -907,7 +1111,7 @@ var opcodeToJS = function(opcode) {
     },
     0xB6: function() {
       // OR A,(HL)
-      this.f = this.SZP_TABLE[this.a |= this.readMem(this.getHL())];
+      this.f = this.SZP_TABLE[this.a |= this.readMem((this.h << 8) | this.l)];
     },
     0xB7: function() {
       // OR A,A
@@ -915,39 +1119,51 @@ var opcodeToJS = function(opcode) {
     },
     0xB8: function() {
       // CP A,B
-      this.cp_a(this.b);
+      // Subtract value from accumulator but discard result
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | ((this.a - this.b) & 0xff)];
     },
     0xB9: function() {
       // CP A,C
-      this.cp_a(this.c);
+      // Subtract value from accumulator but discard result
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | ((this.a - this.c) & 0xff)];
     },
     0xBA: function() {
       // CP A,D
-      this.cp_a(this.d);
+      // Subtract value from accumulator but discard result
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | ((this.a - this.d) & 0xff)];
     },
     0xBB: function() {
       // CP A,E
-      this.cp_a(this.e);
+      // Subtract value from accumulator but discard result
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | ((this.a - this.e) & 0xff)];
     },
     0xBC: function() {
       // CP A,H
-      this.cp_a(this.h);
+      // Subtract value from accumulator but discard result
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | ((this.a - this.h) & 0xff)];
     },
     0xBD: function() {
       // CP A,L
-      this.cp_a(this.l);
+      // Subtract value from accumulator but discard result
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | ((this.a - this.l) & 0xff)];
     },
     0xBE: function() {
       // CP A,(HL)
-      this.cp_a(this.readMem(this.getHL()));
+      // Subtract value from accumulator but discard result
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | ((this.a - this.readMem((this.h << 8) | this.l)) & 0xff)];
     },
     0xBF: function() {
       // CP A,A
-      this.cp_a(this.a);
+      // Subtract value from accumulator but discard result
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | ((this.a - this.a) & 0xff)];
     },
     0xC0: function() {
       // RET NZ
-      this.ret((this.f & F_ZERO) == 0);
+      if ((this.f & F_ZERO) == 0) {
+        this.pc = this.readMemWord(this.sp);
+        this.sp += 2;
+        this.tstates -= 6;
+      }
     },
     0xC1: function() {
       // POP BC
@@ -956,7 +1172,9 @@ var opcodeToJS = function(opcode) {
     },
     0xC2: function() {
       // JP NZ,(nn)
-      this.jp((this.f & F_ZERO) == 0);
+      if ((this.f & F_ZERO) == 0)
+        this.pc = this.readMemWord(this.pc);
+      else this.pc += 2;
     },
     0xC3: function() {
       // JP (nn)
@@ -964,24 +1182,39 @@ var opcodeToJS = function(opcode) {
     },
     0xC4: function() {
       // CALL NZ (nn)
-      this.call((this.f & F_ZERO) == 0);
+      if ((this.f & F_ZERO) == 0) {
+        // write value of PC to stack
+        this.writeMem(--this.sp, (this.pc + 2) >> 8);   // (SP - 1) <- high
+        this.writeMem(--this.sp, (this.pc + 2) & 0xff); // (SP - 2) <- low
+        this.pc = this.readMemWord(this.pc);
+        this.tstates -= 7;
+      }
+      else this.pc += 2;
     },
     0xC5: function() {
       // PUSH BC
-      this.push2(this.b, this.c);
+      this.writeMem(--this.sp, this.b);        // (SP - 1) <- high
+      this.writeMem(--this.sp, this.c);            // (SP - 2) <- low
     },
     0xC6: function() {
       // ADD A,n
-      this.add_a(this.readMem(this.pc++));
+      var temp = (this.a + (this.readMem(this.pc++))) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0xC7: function() {
       // RST 00H
-      this.push1(this.pc);
+      this.writeMem(--this.sp, this.pc >> 8);   // (SP - 1) <- high
+      this.writeMem(--this.sp, this.pc & 0xff); // (SP - 2) <- low
       this.pc = 0x00;
     },
     0xC8: function() {
       // RET Z
-      this.ret((this.f & F_ZERO) != 0);
+      if ((this.f & F_ZERO) != 0) {
+        this.pc = this.readMemWord(this.sp);
+        this.sp += 2;
+        this.tstates -= 6;
+      }
     },
     0xC9: function() {
       // RET
@@ -990,7 +1223,9 @@ var opcodeToJS = function(opcode) {
     },
     0xCA: function() {
       // JP Z,(nn)
-      this.jp((this.f & F_ZERO) != 0);
+      if ((this.f & F_ZERO) != 0)
+        this.pc = this.readMemWord(this.pc);
+      else this.pc += 2;
     },
     0xCB: function() {
       // CB Opcode
@@ -998,34 +1233,54 @@ var opcodeToJS = function(opcode) {
     },
     0xCC: function() {
       // CALL Z (nn)
-      this.call((this.f & F_ZERO) != 0);
+      if ((this.f & F_ZERO) != 0) {
+        // write value of PC to stack
+        this.writeMem(--this.sp, (this.pc + 2) >> 8);   // (SP - 1) <- high
+        this.writeMem(--this.sp, (this.pc + 2) & 0xff); // (SP - 2) <- low
+        this.pc = this.readMemWord(this.pc);
+        this.tstates -= 7;
+      }
+      else this.pc += 2;
     },
     0xCD: function() {
       // CALL (nn)
-      this.push1(this.pc + 2);
+      this.writeMem(--this.sp, (this.pc + 2) >> 8);   // (SP - 1) <- high
+      this.writeMem(--this.sp, (this.pc + 2) & 0xff); // (SP - 2) <- low
       this.pc = this.readMemWord(this.pc);
     },
     0xCE: function() {
       // ADC A,n
-      this.adc_a(this.readMem(this.pc++));
+      var carry = this.f & F_CARRY;
+      var temp = (this.a + (this.readMem(this.pc++)) + carry) & 0xff;
+      this.f = this.SZHVC_ADD_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0xCF: function() {
       // RST 08H
-      this.push1(this.pc);
+      this.writeMem(--this.sp, this.pc >> 8);   // (SP - 1) <- high
+      this.writeMem(--this.sp, this.pc & 0xff); // (SP - 2) <- low
       this.pc = 0x08;
     },
     0xD0: function() {
       // RET NC
-      this.ret((this.f & F_CARRY) == 0);
+      if ((this.f & F_CARRY) == 0) {
+        this.pc = this.readMemWord(this.sp);
+        this.sp += 2;
+        this.tstates -= 6;
+      }
     },
     0xD1: function() {
       // POP DE
-      this.setDE(this.readMemWord(this.sp));
+      var value = this.readMemWord(this.sp);
+      this.d = (value >> 8);
+      this.e = value & 0xff;
       this.sp += 2;
     },
     0xD2: function() {
       // JP NC,(nn)
-      this.jp((this.f & F_CARRY) == 0);
+      if ((this.f & F_CARRY) == 0)
+        this.pc = this.readMemWord(this.pc);
+      else this.pc += 2;
     },
     0xD3: function() {
       // OUT (n),A
@@ -1033,34 +1288,54 @@ var opcodeToJS = function(opcode) {
     },
     0xD4: function() {
       // CALL NC (nn)
-      this.call((this.f & F_CARRY) == 0);
+      if ((this.f & F_CARRY) == 0) {
+        // write value of PC to stack
+        this.writeMem(--this.sp, (this.pc + 2) >> 8);   // (SP - 1) <- high
+        this.writeMem(--this.sp, (this.pc + 2) & 0xff); // (SP - 2) <- low
+        this.pc = this.readMemWord(this.pc);
+        this.tstates -= 7;
+      }
+      else this.pc += 2;
     },
     0xD5: function() {
       // PUSH DE
-      this.push2(this.d, this.e);
+      this.writeMem(--this.sp, this.d);        // (SP - 1) <- high
+      this.writeMem(--this.sp, this.e);            // (SP - 2) <- low
     },
     0xD6: function() {
       // SUB n
-      this.sub_a(this.readMem(this.pc++));
+      var temp = (this.a - this.readMem(this.pc++)) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | temp];
+      this.a = temp;
     },
     0xD7: function() {
       // RST 10H
-      this.push1(this.pc);
+      this.writeMem(--this.sp, this.pc >> 8);   // (SP - 1) <- high
+      this.writeMem(--this.sp, this.pc & 0xff); // (SP - 2) <- low
       this.pc = 0x10;
     },
     0xD8: function() {
       // RET C
-      this.ret(((this.f & F_CARRY) != 0));
+      if ((this.f & F_CARRY) != 0) {
+        this.pc = this.readMemWord(this.sp);
+        this.sp += 2;
+        this.tstates -= 6;
+      }
     },
     0xD9: function() {
       // EXX
-      this.exBC();
-      this.exDE();
-      this.exHL();
+      var temp = this.b; this.b = this.b2; this.b2 = temp;
+      temp = this.c; this.c = this.c2; this.c2 = temp;
+      temp = this.d; this.d = this.d2; this.d2 = temp;
+      temp = this.e; this.e = this.e2; this.e2 = temp;
+      temp = this.h; this.h = this.h2; this.h2 = temp;
+      temp = this.l; this.l = this.l2; this.l2 = temp;
     },
     0xDA: function() {
       // JP C,(nn)
-      this.jp((this.f & F_CARRY) != 0);
+      if ((this.f & F_CARRY) != 0)
+        this.pc = this.readMemWord(this.pc);
+      else this.pc += 2;
     },
     0xDB: function() {
       // IN A,(n)
@@ -1068,7 +1343,14 @@ var opcodeToJS = function(opcode) {
     },
     0xDC: function() {
       // CALL C (nn)
-      this.call((this.f & F_CARRY) != 0);
+      if ((this.f & F_CARRY) != 0) {
+        // write value of PC to stack
+        this.writeMem(--this.sp, (this.pc + 2) >> 8);   // (SP - 1) <- high
+        this.writeMem(--this.sp, (this.pc + 2) & 0xff); // (SP - 2) <- low
+        this.pc = this.readMemWord(this.pc);
+        this.tstates -= 7;
+      }
+      else this.pc += 2;
     },
     0xDD: function() {
       // DD Opcode
@@ -1076,25 +1358,37 @@ var opcodeToJS = function(opcode) {
     },
     0xDE: function() {
       // SBC A,n
-      this.sbc_a(this.readMem(this.pc++));
+      var carry = this.f & F_CARRY;
+      var temp = (this.a - this.readMem(this.pc++) - carry) & 0xff;
+      this.f = this.SZHVC_SUB_TABLE[(carry << 16) | (this.a << 8) | temp];
+      this.a = temp;
     },
     0xDF: function() {
       // RST 18H
-      this.push1(this.pc);
+      this.writeMem(--this.sp, this.pc >> 8);   // (SP - 1) <- high
+      this.writeMem(--this.sp, this.pc & 0xff); // (SP - 2) <- low
       this.pc = 0x18;
     },
     0xE0: function() {
       // RET PO
-      this.ret((this.f & F_PARITY) == 0);
+      if ((this.f & F_PARITY) == 0) {
+        this.pc = this.readMemWord(this.sp);
+        this.sp += 2;
+        this.tstates -= 6;
+      }
     },
     0xE1: function() {
       // POP HL
-      this.setHL(this.readMemWord(this.sp));
+      var value = this.readMemWord(this.sp);
+      this.h = (value >> 8);
+      this.l = value & 0xff;
       this.sp += 2;
     },
     0xE2: function() {
       // JP PO,(nn)
-      this.jp((this.f & F_PARITY) == 0);
+      if ((this.f & F_PARITY) == 0)
+        this.pc = this.readMemWord(this.pc);
+      else this.pc += 2;
     },
     0xE3: function() {
       // EX (SP),HL
@@ -1107,11 +1401,19 @@ var opcodeToJS = function(opcode) {
     },
     0xE4: function() {
       // CALL PO (nn)
-      this.call((this.f & F_PARITY) == 0);
+      if ((this.f & F_PARITY) == 0) {
+        // write value of PC to stack
+        this.writeMem(--this.sp, (this.pc + 2) >> 8);   // (SP - 1) <- high
+        this.writeMem(--this.sp, (this.pc + 2) & 0xff); // (SP - 2) <- low
+        this.pc = this.readMemWord(this.pc);
+        this.tstates -= 7;
+      }
+      else this.pc += 2;
     },
     0xE5: function() {
       // PUSH HL
-      this.push2(this.h, this.l);
+      this.writeMem(--this.sp, this.h);        // (SP - 1) <- high
+      this.writeMem(--this.sp, this.l);            // (SP - 2) <- low
     },
     0xE6: function() {
       // AND (n)
@@ -1119,20 +1421,27 @@ var opcodeToJS = function(opcode) {
     },
     0xE7: function() {
       // RST 20H
-      this.push1(this.pc);
+      this.writeMem(--this.sp, this.pc >> 8);   // (SP - 1) <- high
+      this.writeMem(--this.sp, this.pc & 0xff); // (SP - 2) <- low
       this.pc = 0x20;
     },
     0xE8: function() {
       // RET PE
-      this.ret((this.f & F_PARITY) != 0);
+      if ((this.f & F_PARITY) != 0) {
+        this.pc = this.readMemWord(this.sp);
+        this.sp += 2;
+        this.tstates -= 6;
+      }
     },
     0xE9: function() {
       // JP (HL)
-      this.pc = this.getHL();
+      this.pc = (this.h << 8) | this.l;
     },
     0xEA: function() {
       // JP PE,(nn)
-      this.jp((this.f & F_PARITY) != 0);
+      if ((this.f & F_PARITY) != 0)
+        this.pc = this.readMemWord(this.pc);
+      else this.pc += 2;
     },
     0xEB: function() {
       // EX DE,HL
@@ -1145,7 +1454,14 @@ var opcodeToJS = function(opcode) {
     },
     0xEC: function() {
       // CALL PE (nn)
-      this.call((this.f & F_PARITY) != 0);
+      if ((this.f & F_PARITY) != 0) {
+        // write value of PC to stack
+        this.writeMem(--this.sp, (this.pc + 2) >> 8);   // (SP - 1) <- high
+        this.writeMem(--this.sp, (this.pc + 2) & 0xff); // (SP - 2) <- low
+        this.pc = this.readMemWord(this.pc);
+        this.tstates -= 7;
+      }
+      else this.pc += 2;
     },
     0xED: function() {
       // ED Opcode
@@ -1157,12 +1473,17 @@ var opcodeToJS = function(opcode) {
     },
     0xEF: function() {
       // RST 28H
-      this.push1(this.pc);
+      this.writeMem(--this.sp, this.pc >> 8);   // (SP - 1) <- high
+      this.writeMem(--this.sp, this.pc & 0xff); // (SP - 2) <- low
       this.pc = 0x28;
     },
     0xF0: function() {
       // RET P
-      this.ret((this.f & F_SIGN) == 0);
+      if ((this.f & F_SIGN) == 0) {
+        this.pc = this.readMemWord(this.sp);
+        this.sp += 2;
+        this.tstates -= 6;
+      }
     },
     0xF1: function() {
       // POP AF
@@ -1171,7 +1492,9 @@ var opcodeToJS = function(opcode) {
     },
     0xF2: function() {
       // JP P,(nn)
-      this.jp((this.f & F_SIGN) == 0);
+      if ((this.f & F_SIGN) == 0)
+        this.pc = this.readMemWord(this.pc);
+      else this.pc += 2;
     },
     0xF3: function() {
       // DI
@@ -1180,11 +1503,19 @@ var opcodeToJS = function(opcode) {
     },
     0xF4: function() {
       // CALL P (nn)
-      this.call((this.f & F_SIGN) == 0);
+      if ((this.f & F_SIGN) == 0) {
+        // write value of PC to stack
+        this.writeMem(--this.sp, (this.pc + 2) >> 8);   // (SP - 1) <- high
+        this.writeMem(--this.sp, (this.pc + 2) & 0xff); // (SP - 2) <- low
+        this.pc = this.readMemWord(this.pc);
+        this.tstates -= 7;
+      }
+      else this.pc += 2;
     },
     0xF5: function() {
       // PUSH AF
-      this.push2(this.a, this.f);
+      this.writeMem(--this.sp, this.a);        // (SP - 1) <- high
+      this.writeMem(--this.sp, this.f);            // (SP - 2) <- low
     },
     0xF6: function() {
       // OR n
@@ -1192,20 +1523,27 @@ var opcodeToJS = function(opcode) {
     },
     0xF7: function() {
       // RST 30H
-      this.push1(this.pc);
+      this.writeMem(--this.sp, this.pc >> 8);   // (SP - 1) <- high
+      this.writeMem(--this.sp, this.pc & 0xff); // (SP - 2) <- low
       this.pc = 0x30;
     },
     0xF8: function() {
       // RET M
-      this.ret((this.f & F_SIGN) != 0);
+      if ((this.f & F_SIGN) != 0) {
+        this.pc = this.readMemWord(this.sp);
+        this.sp += 2;
+        this.tstates -= 6;
+      }
     },
     0xF9: function() {
       // LD SP,HL
-      this.sp = this.getHL();
+      this.sp = (this.h << 8) | this.l;
     },
     0xFA: function() {
       // JP M,(nn)
-      this.jp((this.f & F_SIGN) != 0);
+      if ((this.f & F_SIGN) != 0)
+        this.pc = this.readMemWord(this.pc);
+      else this.pc += 2;
     },
     0xFB: function() {
       // EI
@@ -1214,7 +1552,14 @@ var opcodeToJS = function(opcode) {
     },
     0xFC: function() {
       // CALL M (nn)
-      this.call((this.f & F_SIGN) != 0);
+      if ((this.f & F_SIGN) != 0) {
+        // write value of PC to stack
+        this.writeMem(--this.sp, (this.pc + 2) >> 8);   // (SP - 1) <- high
+        this.writeMem(--this.sp, (this.pc + 2) & 0xff); // (SP - 2) <- low
+        this.pc = this.readMemWord(this.pc);
+        this.tstates -= 7;
+      }
+      else this.pc += 2;
     },
     0xFD: function() {
       // FD Opcode
@@ -1222,11 +1567,14 @@ var opcodeToJS = function(opcode) {
     },
     0xFE: function() {
       // CP n
-      this.cp_a(this.readMem(this.pc++));
+      // Subtract value from accumulator but discard result
+      this.f = this.SZHVC_SUB_TABLE[(this.a << 8) | ((this.a - this.readMem(this.pc++)) & 0xff)];
+
     },
     0xFF: function() {
       // RST 38H
-      this.push1(this.pc);
+      this.writeMem(--this.sp, this.pc >> 8);   // (SP - 1) <- high
+      this.writeMem(--this.sp, this.pc & 0xff); // (SP - 2) <- low
       this.pc = 0x38;
     }
   };
