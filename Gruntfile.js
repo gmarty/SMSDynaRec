@@ -43,8 +43,7 @@ module.exports = function(grunt) {
           define: [
             '"DEBUG=false"'
           ],
-          debug: false,
-          formatting: 'PRETTY_PRINT' // @todo Fix Closure Compiler compliance.
+          debug: false
         }
       },
 

@@ -1,3 +1,21 @@
+/*
+SMSDynaRec - An attempt to implement a dynamic recompiling emulator for SMS/GG ROMs
+Copyright (C) 2013 G. Cedric Marty (https://github.com/gmarty)
+Based on JavaGear Copyright (c) 2002-2008 Chris White
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
 'use strict';var DEBUG = true;
 var ACCURATE = false;
 var LITTLE_ENDIAN = true;
@@ -10,10 +28,10 @@ var CLOCK_NTSC = 3579545;
 var CLOCK_PAL = 3546893;
 function JSSMS(opts) {
   this.opts = {"ui":JSSMS.DummyUI, "swfPath":"lib/"};
-  if(typeof opts != "undefined") {
+  if(opts != undefined) {
     var key;
     for(key in this.opts) {
-      if(typeof opts[key] != "undefined") {
+      if(opts[key] != undefined) {
         this.opts[key] = opts[key]
       }
     }
@@ -282,7 +300,7 @@ JSSMS.Utils = {rndInt:function(range) {
       i = src.length;
       dest = new JSSMS.Utils.Array(i);
       while(i--) {
-        if(typeof src[i] != "undefined") {
+        if(src[i] != undefined) {
           dest[i] = src[i]
         }
       }
@@ -395,22 +413,22 @@ var getOpCodeInst = function(opcode) {
   var inst = "";
   var postinst = [];
   var tstatesDecrementValue = OP_STATES[opcode];
-  preinst.push("// opcode: " + toHex(opcode));
+  preinst.push("/* opcode: " + toHex(opcode) + "*/");
   if(Setup.ACCURATE_INTERRUPT_EMULATION) {
-    preinst.push("if (this.interruptLine)" + "\n" + "  this.interrupt();                  // Check for interrupt")
+    preinst.push("if (this.interruptLine)" + "\n" + "  this.interrupt();                  /* Check for interrupt */")
   }
   preinst.push("this.pc++;");
   if(Setup.ACCURATE_INTERRUPT_EMULATION) {
     preinst.push("this.EI_inst = false;")
   }
   if(tstatesDecrementValue > 0) {
-    preinst.push("this.tstates -= " + tstatesDecrementValue + ";   // Decrement TStates")
+    preinst.push("this.tstates -= " + tstatesDecrementValue + ";   /* Decrement TStates */")
   }
   if(Setup.REFRESH_EMULATION) {
     preinst.push("this.incR();")
   }
-  inst = opcodeToJS(opcode).replace(/"use strict";/, "").replace(/function \(\) {/, "").replace(/}$/, "").trim().replace(/\r?\n|\r/g, "\n").replace(/^\s+/gm, "");
-  var ret = (preinst.join("\n") + "\n" + inst).trim() + "\n" + postinst.join("\n").trim();
+  inst = opcodeToJS(opcode).replace(/"use strict";/, "").replace(/function \(\) ?{/, "").replace(/}$/, "").trim().replace(/\r?\n|\r/g, "\n").replace(/^\s+/gm, "");
+  var ret = (preinst.join("\n") + "\n" + inst).trim() + ";\n" + postinst.join("\n").trim();
   return ret
 };
 var opcodeToJS = function(opcode) {
@@ -2296,10 +2314,11 @@ JSSMS.Z80.prototype = {reset:function() {
     if(isEndingInst(this.prevOpcode)) {
       this.hitCounts[this.entryPC]++;
       if(this.hitCounts[this.pc] >= HOT_BLOCK_THRESHOLD && this.blockInstructions.length) {
+        var instructionsNumber = this.blockInstructions.length;
         var blockFunction = this.blockInstructions.map(function(opcode) {
           return self.opcodeInstructions[opcode]
         }).join("\n" + "if (!(this.tstates > cyclesTo)) return;" + "\n\n");
-        blockFunction = (new Function("return function block_" + toHex(this.entryPC) + "_" + blockFunction.length + "(cyclesTo) {\n" + blockFunction + "}"))();
+        blockFunction = (new Function("return function block_" + toHex(this.entryPC) + "_" + instructionsNumber + "(cyclesTo) {\n" + blockFunction + "}"))();
         this.blocks[this.entryPC] = blockFunction
       }
       this.entryPC = this.pc;
@@ -6568,6 +6587,10 @@ if(typeof $ != "undefined") {
     var parent = this;
     var UI = function(sms) {
       this.main = sms;
+      if(Object.prototype.toString.call(window["operamini"]) == "[object OperaMini]") {
+        $(parent).html('<div class="alert alert-error"><strong>Oh no!</strong> Your browser can\'t run this emulator. Try the latest version of Firefox, Google Chrome, Opera or Safari!</div>');
+        return
+      }
       var self = this;
       var root = $("<div></div>");
       var controls = $('<div class="controls"></div>');
@@ -6592,7 +6615,7 @@ if(typeof $ != "undefined") {
       this.screen = $("<canvas width=" + SMS_WIDTH + " height=" + SMS_HEIGHT + ' class="screen"></canvas>');
       this.canvasContext = this.screen[0].getContext("2d");
       if(!this.canvasContext.getImageData) {
-        $(parent).html('<div class="alert-message error"><p><strong>Oh no!</strong> Your browser doesn\'t support writing pixels directly to the <code>&lt;canvas&gt;</code> tag. Try the latest versions of Firefox, Google Chrome, Opera or Safari!</p></div>');
+        $(parent).html('<div class="alert alert-error"><strong>Oh no!</strong> Your browser doesn\'t support writing pixels directly to the <code>&lt;canvas&gt;</code> tag. Try the latest version of Firefox, Google Chrome, Opera or Safari!</div>');
         return
       }
       this.canvasImageData = this.canvasContext.getImageData(0, 0, SMS_WIDTH, SMS_HEIGHT);
@@ -6601,7 +6624,7 @@ if(typeof $ != "undefined") {
       this.romSelect.change(function() {
         self.loadROM()
       });
-      this.buttons = {start:$('<input type="button" value="Stop" class="btn" disabled="disabled">'), restart:$('<input type="button" value="Restart" class="btn" disabled="disabled">'), sound:$('<input type="button" value="Enable sound" class="btn" disabled="disabled">'), zoom:$('<input type="button" value="Zoom in" class="btn">')};
+      this.buttons = {start:$('<input type="button" value="Stop" class="btn" disabled="disabled">'), restart:$('<input type="button" value="Restart" class="btn" disabled="disabled">'), sound:$('<input type="button" value="Enable sound" class="btn" disabled="disabled">'), zoom:$('<input type="button" value="Zoom in" class="btn hidden-phone">')};
       this.buttons.start.click(function() {
         if(!self.main.isRunning) {
           self.main.start();
@@ -6660,7 +6683,7 @@ if(typeof $ != "undefined") {
       controls.appendTo(root);
       this.log.appendTo(root);
       root.appendTo($(parent));
-      if(typeof roms != "undefined") {
+      if(roms != undefined) {
         this.setRoms(roms)
       }
       $(document).bind("keydown", function(evt) {
@@ -6697,7 +6720,7 @@ if(typeof $ != "undefined") {
       this.updateStatus("Downloading...");
       $.ajax({url:escape(this.romSelect.val()), xhr:function() {
         var xhr = $.ajaxSettings.xhr();
-        if(typeof xhr.overrideMimeType != "undefined") {
+        if(xhr.overrideMimeType != undefined) {
           xhr.overrideMimeType("text/plain; charset=x-user-defined")
         }
         self.xhr = xhr;

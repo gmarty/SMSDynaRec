@@ -122,12 +122,12 @@ var getOpCodeInst = function(opcode) {
   var postinst = [];
   var tstatesDecrementValue = OP_STATES[opcode];
 
-  preinst.push('// opcode: ' + toHex(opcode));
+  preinst.push('/* opcode: ' + toHex(opcode) + '*/');
 
   // Inline EI_inst optimization.
   if (Setup.ACCURATE_INTERRUPT_EMULATION) {
     preinst.push('if (this.interruptLine)' + '\n' +
-        '  this.interrupt();                  // Check for interrupt');
+        '  this.interrupt();                  /* Check for interrupt */');
   }
 
   preinst.push('this.pc++;');
@@ -137,7 +137,7 @@ var getOpCodeInst = function(opcode) {
 
   // Strip tstates decrement if possible.
   if (tstatesDecrementValue > 0) {
-    preinst.push('this.tstates -= ' + tstatesDecrementValue + ';   // Decrement TStates');
+    preinst.push('this.tstates -= ' + tstatesDecrementValue + ';   /* Decrement TStates */');
   }
 
   if (Setup.REFRESH_EMULATION)
@@ -146,14 +146,14 @@ var getOpCodeInst = function(opcode) {
   // We get and clean the instructions.
   inst = opcodeToJS(opcode)
     .replace(/"use strict";/, '')
-    .replace(/function \(\) {/, '')
+    .replace(/function \(\) ?{/, '')
     .replace(/}$/, '')
     .trim()
     .replace(/\r?\n|\r/g, '\n')
     .replace(/^\s+/gm, '');
 
   var ret = (preinst.join('\n') + '\n' + inst)
-    .trim() + '\n' + postinst.join('\n')
+    .trim() + ';\n' + postinst.join('\n')
     .trim();
 
   return ret;
