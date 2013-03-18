@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SMSDynaRec - A dynamic recompiling emulator for SMS/GG ROMs</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="http://twitter.github.com/bootstrap/assets/css/bootstrap.css">
+<link rel="stylesheet" href="http://twitter.github.com/bootstrap/assets/css/bootstrap-responsive.css">
+<style>
+html, body {
+  background: #eee;
+}
+.container {
+  margin-top: 20px;
+}
+.content {
+  background: #fff;
+  padding: 20px;
+  margin: 0 -20px;
+  border-radius: 10px;
+}
+.page-header {
+  background: #f5f5f5;
+  padding: 20px 20px 10px;
+  margin: -20px -20px 20px;
+  border-radius: 10px 10px 0 0;
+  border: 0;
+}
+.screen {
+  background: #000;
+  image-rendering: -moz-crisp-edges;          // FF 6.0+
+  image-rendering: -webkit-optimize-contrast; // Webkit (Safari now, Chrome soon)
+  image-rendering: optimizeSpeed;             // Older versions of FF
+  image-rendering: optimize-contrast;         // Possible future browsers.
+  -ms-interpolation-mode: nearest-neighbor;   // IE
+}
+.screen:-webkit-full-screen {
+  height: 100%
+}
+select, .btn {
+  margin: 0 5px 5px 0;
+}
+footer {
+  padding-top: 10px;
+}
+@media (max-width: 768px) {
+  .container {
+    margin-top: 0;
+  }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="content">
+    <div class="page-header">
+      <h1>SMSDynaRec<small> A dynamic recompiling emulator for SMS/GG ROMs</small></h1>
+    </div>
+    <div class="row-fluid">
+      <div class="span8">
+        <div id="emulator"></div>
+      </div>
+      <div class="span4">
+        <h3>Controllers</h3>
+        <table class="table table-striped">
+          <tr>
+            <th>Button</th>
+            <th>Player 1</th>
+            <th>Player 2</th>
+          </tr>
+          <tr>
+            <th>Left</th>
+            <td>Left</td>
+            <td>Num-4</td>
+          <tr>
+            <th>Right</th>
+            <td>Right</td>
+            <td>Num-6</td>
+          </tr>
+          <tr>
+            <th>Up</th>
+            <td>Up</td>
+            <td>Num-8</td>
+          </tr>
+          <tr>
+            <th>Down</th>
+            <td>Down</td>
+            <td>Num-2</td>
+          </tr>
+          <tr>
+            <th>Fire 1</th>
+            <td>X</td>
+            <td>Num-7</td>
+          </tr>
+          <tr>
+            <th>Fire 2</th>
+            <td>Z</td>
+            <td>Num-9</td>
+          </tr>
+          <tr>
+            <th>Start</th>
+            <td>Enter</td>
+            <td>Num-1</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+  <footer>
+    <p>© 2013 G. Cedric Marty (<a href="https://github.com/gmarty">https://github.com/gmarty</a>)</p>
+  </footer>
+</div>
+<a href="https://github.com/gmarty/SMSDynaRec"><img style="position: absolute; top: 0; right: 0; border: 0;" src="https://s3.amazonaws.com/github/ribbons/forkme_right_red_aa0000.png" alt="Fork SMSDynaRec on GitHub"></a>
+<script src="node_modules/jsSMS/lib/jquery.min.js" type="text/javascript"></script>
+<script src="min/jssms.min.js" type="text/javascript"></script>
+<script>
+'use strict';
+
+var sms = new JSSMS({
+  'ui': $('#emulator').JSSMSUI({
+    'Homebrew Master System working': [
+      ['blockhead', 'node_modules/jsSMS/roms/homebrew/blockhead.sms'],
+      ['KunKun & KokoKun', 'node_modules/jsSMS/roms/homebrew/KunKun & KokoKun.sms'],
+      ['vg-fighter', 'node_modules/jsSMS/roms/homebrew/vg-fighter.sms']
+    ],
+    'Homebrew Master System not working': [
+      ['Bock\'s Birthday 2011 II', 'node_modules/jsSMS/roms/homebrew/Bock\'s Birthday 2011 II.sms'],
+      ['KunKun & KokoKun 2 - Return of the Kun', 'node_modules/jsSMS/roms/homebrew/KunKun & KokoKun 2 - Return of the Kun [v0.99].sms'],
+      ['ono', 'node_modules/jsSMS/roms/homebrew/ono [v1.01].sms'],
+      ['sokoban', 'node_modules/jsSMS/roms/homebrew/sokoban.sms'],
+      ['vpoker', 'node_modules/jsSMS/roms/homebrew/vpoker.sms']
+    ],
+    'Master System': [
+      ['Alex Kidd in Miracle World', 'node_modules/jsSMS/roms/sms/Alex Kidd in Miracle World (J) [!].sms'],
+      ['Alex Kidd in High Tech World', 'node_modules/jsSMS/roms/sms/Alex Kidd in High Tech World (UE) [!].sms']
+    ],
+    'GameGear': [
+      ['Wakiyanland', 'node_modules/jsSMS/roms/gg/Wakiyarando (Wagyan Land) (J).gg'],
+      ['Kaitô Saint Tail', 'node_modules/jsSMS/roms/gg/Kyoto Saint Tale (J).gg']
+    ],
+    'Master System technical roms': [
+      ['Checkstate v.1.0', 'node_modules/jsSMS/roms/technical/chkstate.sms'],
+      ['Color Check v.1.0', 'node_modules/jsSMS/roms/technical/ColorCheck.sms'],
+      ['Fullscreen Palette Test v.1.0', 'node_modules/jsSMS/roms/technical/FullscreenPaletteTestProgram.sms'],
+      ['Palette v.1.0', 'node_modules/jsSMS/roms/technical/smspal.sms'],
+      ['Pause Test v1.00', 'node_modules/jsSMS/roms/technical/PauseTest.sms'],
+      ['PFR detect v.2.00', 'node_modules/jsSMS/roms/technical/PFR_Detect200.sms'],
+      ['Sound Test v.1.1', 'node_modules/jsSMS/roms/technical/SMSSoundTest1.1.sms'],
+      ['V Counter Test v.1.0', 'node_modules/jsSMS/roms/technical/VCounterTest.sms'],
+      ['VDP Test v.1.31', 'node_modules/jsSMS/roms/technical/VDPTEST.sms'],
+      ['ZEXALL v.0.15', 'node_modules/jsSMS/roms/technical/zexall.sms']
+    ]
+  })
+});
+</script>
+</body>
