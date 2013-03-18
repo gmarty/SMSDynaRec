@@ -1,7 +1,7 @@
 /**
- * SMSDynaRec - An attempt to implement a dynamic recompiling emulator for SMS/GG ROMs.
+ * SMSDynaRec - An attempt to implement a dynamic recompiling emulator for SMS/GG ROMs
  * Copyright (C) 2013 G. Cedric Marty (https://github.com/gmarty)
- * Based on JavaGear Copyright (c) 2002-2008 Chris White.
+ * Based on JavaGear Copyright (c) 2002-2008 Chris White
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

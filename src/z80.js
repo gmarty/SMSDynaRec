@@ -1,5 +1,5 @@
 /**
- * SMSDynaRec - An attempt to implement a dynamic recompiling emulator for SMS/GG ROMs.
+ * SMSDynaRec - An attempt to implement a dynamic recompiling emulator for SMS/GG ROMs
  * Copyright (C) 2013 G. Cedric Marty (https://github.com/gmarty)
  * Based on JavaGear Copyright (c) 2002-2008 Chris White
  *
@@ -611,6 +611,7 @@ JSSMS.Z80.prototype = {
         this.hitCounts[this.entryPC]++;
 
         if (this.hitCounts[this.pc] >= HOT_BLOCK_THRESHOLD && this.blockInstructions.length) {
+          var instructionsNumber = this.blockInstructions.length;
           var blockFunction = this.blockInstructions
             .map(function(opcode) {
                 return self.opcodeInstructions[opcode];
@@ -618,7 +619,7 @@ JSSMS.Z80.prototype = {
             .join('\n' + 'if (!(this.tstates > cyclesTo)) return;' + '\n\n');
 
           blockFunction = new Function(
-              'return function block_' + toHex(this.entryPC) + '_' + blockFunction.length + '(cyclesTo) {\n' +
+              'return function block_' + toHex(this.entryPC) + '_' + instructionsNumber + '(cyclesTo) {\n' +
               blockFunction +
               '}'
               )();
