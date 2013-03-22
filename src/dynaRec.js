@@ -146,7 +146,7 @@ var getOpCodeInst = function(opcode) {
   // We get and clean the instructions.
   inst = opcodeToJS(opcode)
     .replace(/"use strict";/, '')
-    .replace(/function \(\) ?{/, '')
+    .replace(/function ?\(\) ?{/, '')
     .replace(/}$/, '')
     .trim()
     .replace(/\r?\n|\r/g, '\n')

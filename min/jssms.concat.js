@@ -427,7 +427,7 @@ var getOpCodeInst = function(opcode) {
   if(Setup.REFRESH_EMULATION) {
     preinst.push("this.incR();")
   }
-  inst = opcodeToJS(opcode).replace(/"use strict";/, "").replace(/function \(\) ?{/, "").replace(/}$/, "").trim().replace(/\r?\n|\r/g, "\n").replace(/^\s+/gm, "");
+  inst = opcodeToJS(opcode).replace(/"use strict";/, "").replace(/function ?\(\) ?{/, "").replace(/}$/, "").trim().replace(/\r?\n|\r/g, "\n").replace(/^\s+/gm, "");
   var ret = (preinst.join("\n") + "\n" + inst).trim() + ";\n" + postinst.join("\n").trim();
   return ret
 };

@@ -1128,7 +1128,7 @@ function $getOpCodeInst$$($opcode$$2$$) {
     this.$writeMem$(--this.$sp$, this.$pc$ >> 8);
     this.$writeMem$(--this.$sp$, this.$pc$ & 255);
     this.$pc$ = 56
-  }}[$opcode$$2$$].toString().replace(/"use strict";/, "").replace(/function \(\) ?{/, "").replace(/}$/, "").trim().replace(/\r?\n|\r/g, "\n").replace(/^\s+/gm, "");
+  }}[$opcode$$2$$].toString().replace(/"use strict";/, "").replace(/function ?\(\) ?{/, "").replace(/}$/, "").trim().replace(/\r?\n|\r/g, "\n").replace(/^\s+/gm, "");
   return($preinst$$.join("\n") + "\n" + $inst_tstatesDecrementValue$$).trim() + ";\n" + "".trim()
 }
 ;var $OP_STATES$$ = [4, 10, 7, 6, 4, 4, 7, 4, 4, 11, 7, 6, 4, 4, 7, 4, 8, 10, 7, 6, 4, 4, 7, 4, 12, 11, 7, 6, 4, 4, 7, 4, 7, 10, 16, 6, 4, 4, 7, 4, 7, 11, 16, 6, 4, 4, 7, 4, 7, 10, 13, 6, 11, 11, 10, 4, 7, 11, 13, 6, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4, 7, 7, 7, 7, 7, 7, 4, 7, 4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 
