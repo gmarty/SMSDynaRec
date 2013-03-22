@@ -35,15 +35,14 @@ module.exports = function(grunt) {
         jsOutputFile: 'min/jssms.min.js',
         options: {
           externs: '<%= externs %>',
-          compilation_level: 'SIMPLE_OPTIMIZATIONS', // @todo Fix Closure Compiler compliance.
+          compilation_level: 'ADVANCED_OPTIMIZATIONS',
           language_in: 'ECMASCRIPT5_STRICT',
           summary_detail_level: 3,
           warning_level: 'VERBOSE',
           //output_wrapper: '(function(){%output%})();', // @todo Fix Closure Compiler compliance.
           define: [
             '"DEBUG=false"'
-          ],
-          debug: false
+          ]
         }
       },
 
@@ -61,7 +60,7 @@ module.exports = function(grunt) {
             '"DEBUG=true"'
           ],
           debug: true,
-          formatting: 'pretty_print'
+          formatting: 'PRETTY_PRINT'
         }
       },
 

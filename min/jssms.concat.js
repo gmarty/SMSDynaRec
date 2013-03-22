@@ -400,38 +400,61 @@ var toHex = function(dec) {
   }
   return"0x" + hex
 };
-var buildOpcodeInsts = function() {
-  var i = 0;
-  var opCodeInsts = new Array(255);
-  for(;i <= 255;i++) {
-    opCodeInsts[i] = getOpCodeInst(i)
-  }
-  return opCodeInsts
+JSSMS.Z80DynaRec = function() {
 };
-var getOpCodeInst = function(opcode) {
+JSSMS.Z80DynaRec.prototype = {init:function() {
+  this.buildOpcodeInsts()
+}, buildOpcodeInsts:function() {
+  var i = 0;
+  for(;i <= 255;i++) {
+    this.opcodeInstructions[i] = this.getOpCodeInst(i)
+  }
+}, getOpCodeInst:function(opcode) {
   var preinst = [];
   var inst = "";
   var postinst = [];
   var tstatesDecrementValue = OP_STATES[opcode];
-  preinst.push("/* opcode: " + toHex(opcode) + "*/");
-  if(Setup.ACCURATE_INTERRUPT_EMULATION) {
-    preinst.push("if (this.interruptLine)" + "\n" + "  this.interrupt();                  /* Check for interrupt */")
+  if(DEBUG) {
+    preinst.push("/* opcode: " + toHex(opcode) + "*/")
   }
-  preinst.push("this.pc++;");
   if(Setup.ACCURATE_INTERRUPT_EMULATION) {
-    preinst.push("this.EI_inst = false;")
+    preinst.push(this.cleanFunction(this.dynarecPart1))
+  }
+  preinst.push(this.cleanFunction(this.dynarecPart2));
+  if(Setup.ACCURATE_INTERRUPT_EMULATION) {
+    preinst.push(this.cleanFunction(this.dynarecPart3))
   }
   if(tstatesDecrementValue > 0) {
-    preinst.push("this.tstates -= " + tstatesDecrementValue + ";   /* Decrement TStates */")
+    preinst.push(this.cleanFunction(this.dynarecPart4).replace("2", tstatesDecrementValue))
   }
   if(Setup.REFRESH_EMULATION) {
-    preinst.push("this.incR();")
+    preinst.push(this.cleanFunction(this.dynarecPart5))
   }
-  inst = opcodeToJS(opcode).replace(/"use strict";/, "").replace(/function ?\(\) ?{/, "").replace(/}$/, "").trim().replace(/\r?\n|\r/g, "\n").replace(/^\s+/gm, "");
+  inst = this.cleanFunction(this.opcodeToJS(opcode));
   var ret = (preinst.join("\n") + "\n" + inst).trim() + ";\n" + postinst.join("\n").trim();
-  return ret
-};
-var opcodeToJS = function(opcode) {
+  return ret;
+  function toHex(dec) {
+    var hex = dec.toString(16);
+    if(hex.length == 1) {
+      hex = "0" + hex
+    }
+    return"0x" + hex
+  }
+}, cleanFunction:function(func) {
+  return func.toString().replace(/"use strict";/, "").replace(/function ?[^(]*\(\) ?{/, "").replace(/}$/, "").trim().replace(/\r?\n|\r/g, "\n").replace(/^\s+/gm, "")
+}, dynarecPart1:function() {
+  if(this.interruptLine) {
+    this.interrupt()
+  }
+}, dynarecPart2:function() {
+  this.pc++
+}, dynarecPart3:function() {
+  this.EI_inst = false
+}, dynarecPart4:function() {
+  this.tstates -= 2
+}, dynarecPart5:function() {
+  this.incR()
+}, opcodeToJS:function(opcode) {
   var opcodeToInst = {"0":function() {
   }, 1:function() {
     this.c = this.readMem(this.pc++);
@@ -1353,7 +1376,7 @@ var opcodeToJS = function(opcode) {
     this.pc = 56
   }};
   return opcodeToInst[opcode].toString()
-};
+}};
 function getOpCode(opcode) {
   switch(opcode) {
     case 0:
@@ -2196,7 +2219,7 @@ JSSMS.Z80 = function(sms) {
   this.entryPC = 0;
   this.prevOpcode = 0;
   this.blockInstructions = [];
-  this.opcodeInstructions = buildOpcodeInsts();
+  this.opcodeInstructions = new Array(255);
   this.rom = [];
   this.ram = new Array(8);
   this.sram = null;
@@ -2218,7 +2241,11 @@ JSSMS.Z80 = function(sms) {
   this.generateMemory();
   this.writeMem = JSSMS.Utils.writeMem.bind(this, this);
   this.readMem = JSSMS.Utils.readMem.bind(this, this.memReadMap);
-  this.readMemWord = JSSMS.Utils.readMemWord.bind(this, this.memReadMap)
+  this.readMemWord = JSSMS.Utils.readMemWord.bind(this, this.memReadMap);
+  for(var method in JSSMS.Z80DynaRec.prototype) {
+    this[method] = JSSMS.Z80DynaRec.prototype[method]
+  }
+  this.init()
 };
 JSSMS.Z80.prototype = {reset:function() {
   this.a = this.a2 = 0;
@@ -2300,6 +2327,7 @@ JSSMS.Z80.prototype = {reset:function() {
   }
   while(this.tstates > cyclesTo) {
     if(ENABLE_DYNAREC && this.blocks[this.pc]) {
+      this["tstates"] = this.tstates;
       this.blocks[this.pc].call(this, cyclesTo);
       this.entryPC = this.pc;
       this.blockInstructions = [];
@@ -2318,7 +2346,11 @@ JSSMS.Z80.prototype = {reset:function() {
         var blockFunction = this.blockInstructions.map(function(opcode) {
           return self.opcodeInstructions[opcode]
         }).join("\n" + "if (!(this.tstates > cyclesTo)) return;" + "\n\n");
-        blockFunction = (new Function("return function block_" + toHex(this.entryPC) + "_" + instructionsNumber + "(cyclesTo) {\n" + blockFunction + "}"))();
+        if(DEBUG) {
+          blockFunction = (new Function("return function block_" + toHex(this.entryPC) + "_" + instructionsNumber + "(cyclesTo) {\n" + blockFunction + "}"))()
+        }else {
+          blockFunction = new Function("cyclesTo", blockFunction)
+        }
         this.blocks[this.entryPC] = blockFunction
       }
       this.entryPC = this.pc;

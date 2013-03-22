@@ -326,10 +326,9 @@ JSSMS.Z80 = function(sms) {
   this.blockInstructions = [];
 
   /**
-   * Precompute a map of opcode to instruction strings.
    * @type {Array.<string>}
    */
-  this.opcodeInstructions = buildOpcodeInsts();
+  this.opcodeInstructions = new Array(0xFF);
 
   // MEMORY ACCESS
   /**
@@ -439,6 +438,13 @@ JSSMS.Z80 = function(sms) {
    * @return {number} Value from memory location.
    */
   this.readMemWord = JSSMS.Utils.readMemWord.bind(this, this.memReadMap);
+
+  // Augment JSSMS.Z80 with methods from JSSMS.Z80DynaRec.
+  for (var method in JSSMS.Z80DynaRec.prototype) {
+    this[method] = JSSMS.Z80DynaRec.prototype[method];
+  }
+
+  this.init();
 };
 
 JSSMS.Z80.prototype = {
@@ -587,6 +593,8 @@ JSSMS.Z80.prototype = {
 
     while (this.tstates > cyclesTo) {
       if (ENABLE_DYNAREC && this.blocks[this.pc]) {
+        // @fixme Terrible hack to work with Closure Compiler. Find a more elegant way.
+        this['tstates'] = this.tstates;
         this.blocks[this.pc].call(this, cyclesTo);
 
         // Reset instrumentation.
@@ -618,11 +626,15 @@ JSSMS.Z80.prototype = {
               })
             .join('\n' + 'if (!(this.tstates > cyclesTo)) return;' + '\n\n');
 
-          blockFunction = new Function(
-              'return function block_' + toHex(this.entryPC) + '_' + instructionsNumber + '(cyclesTo) {\n' +
-              blockFunction +
-              '}'
-              )();
+          if (DEBUG) {
+            blockFunction = new Function(
+                'return function block_' + toHex(this.entryPC) + '_' + instructionsNumber + '(cyclesTo) {\n' +
+                blockFunction +
+                '}'
+                )();
+          } else {
+            blockFunction = new Function('cyclesTo', blockFunction);
+          }
 
           this.blocks[this.entryPC] = blockFunction;
         }
